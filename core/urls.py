@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import UserDataView,RegisterView, ProfileView
+from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 
@@ -13,6 +14,6 @@ urlpatterns = [
     path('auth/register/', RegisterView.as_view()),
     path('auth/me/', ProfileView.as_view(), name='profile'),
     path('user-data/', UserDataView.as_view(), name='user-data'),
-    path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/', TokenObtainPairView.as_view(permission_classes=[AllowAny]), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 ]
