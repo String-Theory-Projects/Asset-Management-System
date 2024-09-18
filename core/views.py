@@ -33,6 +33,9 @@ class CustomJSONEncoder(DjangoJSONEncoder):
 
 
 class RegisterView(APIView):
+    authentication_classes = []  # Disable authentication for this view
+    permission_classes = []  # Disable permissions for this view
+    
     def post(self, request, *args, **kwargs):
         serializer = UserSerializer(data=request.data)
         
