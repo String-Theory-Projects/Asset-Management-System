@@ -2,6 +2,7 @@ from django.core.cache import cache
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.viewsets import ModelViewSet
 from core.models import Asset, Role
 from .serializers import AssetSerializer
@@ -14,8 +15,9 @@ ROLE_CHOICES = [
 ]
 
 class AssetViewSet(ModelViewSet):
-    serializer_class = AssetSerializer
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    serializer_class = AssetSerializer
 
     def get_queryset(self):
         user = self.request.user
