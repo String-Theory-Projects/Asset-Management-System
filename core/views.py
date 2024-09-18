@@ -14,8 +14,6 @@ from .models import User, Asset, HotelRoom, Payment, Vehicle
 from .serializers import UserSerializer
 
 
-
-
 User = get_user_model()
 logger = logging.getLogger(__name__)
 

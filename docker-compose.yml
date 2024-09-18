@@ -1,0 +1,38 @@
+version: '3'
+
+services:
+  web:
+    build: .
+    command: gunicorn hotel_demo.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=${DB_URL}
+    depends_on:
+      - mqtt
+      - db
+
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_USER_PASSWORD}
+    ports:
+      - ${DOCKER_DB_PORT}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  mqtt:
+    image: eclipse-mosquitto:latest
+    ports:
+      - "1883:1883" # mqtt
+      - "9001:9001" # websocket
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+volumes:
+  pgdata:
