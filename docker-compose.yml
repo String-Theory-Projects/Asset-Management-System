@@ -8,6 +8,10 @@ services:
       - .:/app
     ports:
       - "8000:8000"
+    environment:
+      DJANGO_SETTINGS_MODULE: hotel_demo.settings
+      DEBUG: ${DEBUG}
+      DATABASE_URL: ${DB_URL}
     depends_on:
       - mqtt
       - db
@@ -15,6 +19,9 @@ services:
   db:
     image: postgres:13
     environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_USER_PASSWORD}
     ports:
       - ${DOCKER_DB_PORT}
     volumes:

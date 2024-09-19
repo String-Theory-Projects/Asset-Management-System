@@ -3,8 +3,10 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.viewsets import ModelViewSet
-from core.models import Asset, Role
-from .serializers import AssetSerializer
+from rest_framework.views import APIView
+from core.models import Asset, Role, User
+from .serializers import AssetSerializer, AssociateUserSerializer
+from core.permissions import IsAdmin, IsManager
 
 
 ROLE_CHOICES = [
@@ -16,6 +18,12 @@ ROLE_CHOICES = [
 class AssetViewSet(ModelViewSet):
     serializer_class = AssetSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        # Apply custom permission for update or delete actions
+        if self.action in ['update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsAdmin()]
+        return super().get_permissions()
 
     def get_queryset(self):
         user = self.request.user
@@ -88,3 +96,41 @@ class AssetViewSet(ModelViewSet):
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AssociateUserView(APIView):
+    permission_classes = [IsAuthenticated]  # Authentication required
+
+    def post(self, request, *args, **kwargs):
+        asset_id = kwargs.get('asset_id')
+        if not asset_id:
+            return Response({'error': 'Asset ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Try to get the asset by its primary key 'id'
+        try:
+            asset = Asset.objects.get(id=asset_id)
+        except Asset.DoesNotExist:
+            return Response({'error': 'Asset not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Verify that the user is either an admin or a manager for the asset
+        if not (IsAdmin().has_permission(request, self) or IsManager().has_permission(request, self)):
+            return Response({'error': 'You do not have permission to associate users with this asset.'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Deserialize and validate the request data
+        serializer = AssociateUserSerializer(data=request.data)
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            role = serializer.validated_data['role']
+
+            # Check if a user with the given email exists
+            try:
+                user = User.objects.get(email=email)
+            except User.DoesNotExist:
+                return Response({'error': 'User with this email does not exist.'}, status=status.HTTP_404_NOT_FOUND)
+
+            # Create or update the role association
+            Role.objects.update_or_create(user=user, asset=asset, defaults={'role': role})
+
+            return Response({'message': 'User associated with the asset successfully.'}, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
