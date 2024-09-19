@@ -20,7 +20,7 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_USER_PASSWORD}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
       - ${DOCKER_DB_PORT}
     volumes:
