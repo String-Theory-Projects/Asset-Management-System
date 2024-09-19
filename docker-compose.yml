@@ -9,8 +9,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DEBUG=${DEBUG}
-      - DATABASE_URL=${DB_URL}
+      DJANGO_SETTINGS_MODULE: hotel_demo.settings
+      DEBUG: ${DEBUG}
+      DATABASE_URL: ${DB_URL}
     depends_on:
       - mqtt
       - db
