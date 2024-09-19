@@ -2,6 +2,7 @@ from django.core.cache import cache
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.views import APIView
 from core.models import Asset, Role, User
@@ -16,8 +17,9 @@ ROLE_CHOICES = [
 ]
 
 class AssetViewSet(ModelViewSet):
-    serializer_class = AssetSerializer
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    serializer_class = AssetSerializer
 
     def get_permissions(self):
         # Apply custom permission for update or delete actions
