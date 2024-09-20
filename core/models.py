@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 
 
 ROLE_CHOICES = [
@@ -64,6 +66,35 @@ class Asset(models.Model):
     def __str__(self):
         return self.asset_name
 
+
+class AssetEvent(models.Model):
+    EVENT_TYPE_CHOICES = [
+        ('access', 'Access'),
+        ('location', 'Location'),
+        ('occupancy', 'Occupancy'),
+        ('electricity', 'Electricity'),
+        ('ignition', 'Ignition'),
+        ('passenger_count', 'Passenger Count'),
+    ]
+
+    asset = models.ForeignKey(Asset, on_delete=models.SET_NULL, null=True) # Retain events even if asset is deleted
+    event_type = models.CharField(max_length=50, choices=EVENT_TYPE_CHOICES)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    data = models.CharField(max_length=255)
+
+    # Generic Foreign Key fields
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    sub_asset = GenericForeignKey('content_type', 'object_id')
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.event_type} for {self.asset.asset_name if self.asset else 'Unknown Asset'} at {self.timestamp}"
+
+
+
 class Role(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='roles')
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='roles')
@@ -75,6 +106,7 @@ class Role(models.Model):
     def __str__(self):
         return f"{self.user} is a {self.role} of {self.asset}"
 
+
 class HotelRoom(models.Model):
     id = models.AutoField(primary_key=True)
     hotel = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='rooms', limit_choices_to={'asset_type': 'hotel'})
@@ -85,23 +117,6 @@ class HotelRoom(models.Model):
 
     def __str__(self):
         return f"{self.room_number} - {self.room_type} in {self.hotel.asset_name}"
-
-
-class HotelRoomHistory(models.Model):
-    id = models.AutoField(primary_key=True)
-    room_id = models.ForeignKey(HotelRoom, on_delete=models.CASCADE, related_name='history')
-    access = models.BooleanField()
-    utility = models.BooleanField()
-    occupancy = models.BooleanField()
-    timestamp = models.DateTimeField(default=timezone.now)
-    message_data = models.JSONField()  # To store other message data if needed
-
-    class Meta:
-        ordering = ["-timestamp"]
-
-    def __str__(self):
-        return f"Room Data: {self.message_data}"
-
 
 
 class Vehicle(models.Model):
@@ -116,27 +131,17 @@ class Vehicle(models.Model):
     def __str__(self):
         return f"Vehicle {self.asset.asset_name}"
 
-class VehicleHistory(models.Model):
-    id = models.AutoField(primary_key=True)
-    vehicle_id = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='history')
-    num_passengers = models.IntegerField()
-    location = models.CharField(max_length=255)
-    timestamp = models.DateTimeField(default=timezone.now)
-    message_data = models.JSONField()  # To store other message data if needed
 
-    class Meta:
-        ordering = ["-timestamp"]
-
-    def __str__(self):
-        return f"Vehicle Data: {self.message_data}"
-
-# class Machinery(Asset):
+# class VehicleHistory(models.Model):
 #     id = models.AutoField(primary_key=True)
-#     fleet = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='fleet', limit_choices_to={'asset_type': 'machine'})
-#     machine_type = models.CharField(max_length=255)
-#     machine_number = models.CharField(max_length=255)
-#     petrol_level = models.FloatField()
-#     timestamp = models.DateTimeField(auto_now_add=True)
+#     vehicle_id = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='history')
+#     num_passengers = models.IntegerField()
+#     location = models.CharField(max_length=255)
+#     timestamp = models.DateTimeField(default=timezone.now)
+#     message_data = models.JSONField()  # To store other message data if needed
+
+#     class Meta:
+#         ordering = ["-timestamp"]
 
 #     def __str__(self):
-#         return f"Machinery {self.asset.asset_name}"
+#         return f"Vehicle Data: {self.message_data}

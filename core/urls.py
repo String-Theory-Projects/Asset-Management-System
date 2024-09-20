@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import UserDataView,RegisterView, ProfileView
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+# from rest_framework_simplejwt.token_blacklist.views import BlacklistView
 
 
 # Get All Tables
@@ -11,7 +12,8 @@ router = DefaultRouter()
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('auth/register/', RegisterView.as_view()),
+    path('auth/register/', RegisterView.as_view(), name='register'),
+    # path('api/logout/', LogoutView.as_view(), name='logout'),
     path('auth/me/', ProfileView.as_view(), name='profile'),
     path('user-data/', UserDataView.as_view(), name='user-data'),
     path('token/', TokenObtainPairView.as_view(permission_classes=[AllowAny]), name='token_obtain_pair'),
