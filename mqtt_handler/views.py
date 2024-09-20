@@ -9,7 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 
 
 # Configure the MQTT client
-MQTT_BROKER = 'localhost'  # Replace with your MQTT broker address
+MQTT_BROKER = 'trykey-dashboard.railway.internal'  # Replace with your MQTT broker address
 MQTT_PORT = 1883  # Default MQTT port
 
 class ControlAssetView(APIView):

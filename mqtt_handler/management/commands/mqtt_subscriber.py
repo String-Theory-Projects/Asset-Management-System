@@ -99,5 +99,5 @@ def start_mqtt_subscriber():
         "vehicles/+/ignition",
         "vehicles/+/passengers"
     ]
-    subscriber = MQTTSubscriber("host.docker.internal", 1883, topics) # Replace with your MQTT broker address
+    subscriber = MQTTSubscriber("trykey-dashboard.railway.internal", 1883, topics) # Replace with your MQTT broker address
     subscriber.start()
