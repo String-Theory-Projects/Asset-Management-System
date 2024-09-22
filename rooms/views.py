@@ -2,10 +2,10 @@ from rest_framework import generics
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from core.models import HotelRoom, Asset, Role
-from .serializers import RoomSerializer
+from .serializers import HotelRoomSerializer
 
 class HotelRoomListCreateView(generics.ListCreateAPIView):
-    serializer_class = RoomSerializer
+    serializer_class = HotelRoomSerializer
 
     def get_queryset(self):
         hotel_id = self.kwargs['hotel_id']
@@ -22,7 +22,7 @@ class HotelRoomListCreateView(generics.ListCreateAPIView):
         serializer.save(hotel=hotel)
 
 class HotelRoomRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = RoomSerializer
+    serializer_class = HotelRoomSerializer
 
     def get_queryset(self):
         # Make sure only admins can update/delete rooms
@@ -30,6 +30,6 @@ class HotelRoomRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
         room = get_object_or_404(HotelRoom, id=room_id)
         hotel = room.hotel
         role = Role.objects.filter(user=self.request.user, asset=hotel, role='admin').exists()
-        if self.request.method in ['PUT', 'DELETE'] and not role:
+        if self.request.method in ['PUT', 'PATCH', 'DELETE'] and not role: #The patch method works to update just a parameter
             return Response({"error": "You are not authorized to modify rooms for this hotel."}, status=403)
         return HotelRoom.objects.filter(id=room_id)
