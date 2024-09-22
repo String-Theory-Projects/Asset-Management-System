@@ -22,3 +22,8 @@ class AssetSerializer(serializers.ModelSerializer):
             asset.users.set(users)  # Add users to the asset's many-to-many field
 
         return asset
+
+
+class AssociateUserSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    role = serializers.ChoiceField(choices=['admin', 'manager', 'viewer'])

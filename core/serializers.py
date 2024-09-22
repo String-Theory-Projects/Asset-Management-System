@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Asset, HotelRoom, Payment, Vehicle, HotelRoomHistory, VehicleHistory
+from .models import User
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 
@@ -14,5 +14,5 @@ class UserSerializer(serializers.ModelSerializer):
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("A user with this email already exists.")
+            raise ValidationError("A user with this email already exists.")
         return value
