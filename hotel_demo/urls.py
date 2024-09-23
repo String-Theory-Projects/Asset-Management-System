@@ -23,4 +23,5 @@ urlpatterns = [
     path('api/', include('assets.urls')),
     path('api/', include('mqtt_handler.urls')),
     path('api/', include('rooms.urls')),
+    path('api/', include('vehicles.urls')),
 ]

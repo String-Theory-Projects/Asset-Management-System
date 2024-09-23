@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'core',
     'assets',
     'rooms',
+    'vehicles',
     'mqtt_handler',
     'django.contrib.admin',
     'django.contrib.auth',
