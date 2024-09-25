@@ -4,24 +4,8 @@ from django.utils import timezone
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 
+from core import * #import the global variables from conf
 
-ROLE_CHOICES = [
-    ('admin', 'Admin'),
-    ('manager', 'Manager'),
-    ('viewer', 'Viewer'),
-]
-
-PAYMENT_STATUS_CHOICES = [
-    ('pending', 'Pending'),
-    ('completed', 'Completed'),
-    ('failed', 'Failed')
-]
-
-ASSET_TYPE_CHOICES = [
-    ('vehicle', 'Vehicle'),
-    # ('machine', 'Machine'),
-    ('hotel', 'Hotel'),
-]
 
 class User(AbstractUser):
     avatar = models.ImageField(upload_to='avatars/', default='default_avatars/default_avatar.png', blank=True, null=True)
@@ -68,15 +52,6 @@ class Asset(models.Model):
 
 
 class AssetEvent(models.Model):
-    EVENT_TYPE_CHOICES = [
-        ('access', 'Access'),
-        ('location', 'Location'),
-        ('occupancy', 'Occupancy'),
-        ('electricity', 'Electricity'),
-        ('ignition', 'Ignition'),
-        ('passenger_count', 'Passenger Count'),
-    ]
-
     asset = models.ForeignKey(Asset, on_delete=models.SET_NULL, null=True) # Retain events even if asset is deleted
     event_type = models.CharField(max_length=50, choices=EVENT_TYPE_CHOICES)
     timestamp = models.DateTimeField(auto_now_add=True)
@@ -130,18 +105,3 @@ class Vehicle(models.Model):
 
     def __str__(self):
         return f"Vehicle {self.asset.asset_name}"
-
-
-# class VehicleHistory(models.Model):
-#     id = models.AutoField(primary_key=True)
-#     vehicle_id = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='history')
-#     num_passengers = models.IntegerField()
-#     location = models.CharField(max_length=255)
-#     timestamp = models.DateTimeField(default=timezone.now)
-#     message_data = models.JSONField()  # To store other message data if needed
-
-#     class Meta:
-#         ordering = ["-timestamp"]
-
-#     def __str__(self):
-#         return f"Vehicle Data: {self.message_data}

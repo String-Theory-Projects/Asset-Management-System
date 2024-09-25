@@ -1,1 +1,22 @@
 core:
+  role_choices:
+    - ['admin', 'Admin']
+    - ['manager', 'Manager']
+    - ['viewer', 'Viewer']
+
+  payment_status_choices:
+    - ['pending', 'Pending']
+    - ['completed', 'Completed']
+    - ['failed', 'Failed']
+
+  asset_type_choices:
+    - ['vehicle', 'Vehicle']
+    - ['hotel', 'Hotel']
+
+  event_type_choices:
+    - ['access', 'Access']
+    - ['location', 'Location']
+    - ['occupancy', 'Occupancy']
+    - ['electricity', 'Electricity']
+    - ['ignition', 'Ignition']
+    - ['passenger_count', 'Passenger Count']
