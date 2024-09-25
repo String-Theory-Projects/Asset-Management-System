@@ -20,3 +20,5 @@ core:
     - ['electricity', 'Electricity']
     - ['ignition', 'Ignition']
     - ['passenger_count', 'Passenger Count']
+assets:
+  role_choices: ['admin','manager','viewer']
