@@ -1,4 +1,4 @@
-from rest_framework import generics, permissions
+from rest_framework import generics
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from core.models import Vehicle, Asset, Role
@@ -46,6 +46,11 @@ class VehicleStatusView(generics.RetrieveAPIView):
     def get(self, request, *args, **kwargs):
         vehicle_id = self.kwargs['pk']
         vehicle = get_object_or_404(Vehicle, id=vehicle_id)
+        fleet = vehicle.fleet
+
+        has_access = Role.objects.filter(user=request.user, asset=fleet).exists()
+        if not has_access:
+            return Response({"error": "You are not authorized to view the status of this vehicle."}, status=403)
 
         # Fetch status (e.g., location, number of passengers)
         # Assuming there is some status-related data in the `Vehicle` model, or you may need to add more fields.
