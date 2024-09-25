@@ -94,7 +94,6 @@ class AssetEvent(models.Model):
         return f"{self.event_type} for {self.asset.asset_name if self.asset else 'Unknown Asset'} at {self.timestamp}"
 
 
-
 class Role(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='roles')
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='roles')
