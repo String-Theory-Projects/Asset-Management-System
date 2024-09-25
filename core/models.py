@@ -22,18 +22,33 @@ class User(AbstractUser):
         return self.email
 
 
-class Payment(models.Model):
-    asset_id = models.ForeignKey('Asset', related_name='payments', on_delete=models.CASCADE)
-    sub_asset_id = models.IntegerField()
+class Transaction(models.Model):
+    asset_id = models.ForeignKey('Asset', related_name='transactions', on_delete=models.CASCADE)
+    sub_asset_id = models.IntegerField(null=True, blank=True)
     payment_status = models.CharField(max_length=10, choices=PAYMENT_STATUS_CHOICES)
-    payment_type = models.CharField(max_length=100)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_type = models.CharField(max_length=100, choices=[('card','Card'), ('transfer', 'Transfer'),('mobile_money', 'Mobile_money')])
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    currency = models.CharField(max_length=3, default='NGN')
     timestamp = models.DateTimeField(auto_now_add=True)
-    checkout = models.CharField(max_length=255)
-    sender_name = models.CharField(max_length=255)
+    updated_at = models.DateTimeField(auto_now=True)
+    transaction_ref = models.CharField(max_length=255, unique=True)
+    processor_ref = models.CharField(max_length=255, null=True, blank=True)
+    name = models.CharField(max_length=255)
+    email = models.EmailField(null=True, blank=True)
+    is_outgoing = models.BooleanField(default=False)
+    description = models.TextField(null=True, blank=True)
+    is_verified = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"Payment {self.id} for {self.asset_id.asset_name}"
+        return f"Payment {self.id} of {self.currency}{self.amount} by {self.name}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['transaction_ref']),
+            models.Index(fields=['payment_status']),
+            models.Index(fields=['timestamp']),
+        ]
+
 
 
 class Asset(models.Model):
