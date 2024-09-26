@@ -9,8 +9,8 @@ from core import * #import the global variables from conf
 
 class User(AbstractUser):
     avatar = models.ImageField(upload_to='avatars/', default='default_avatars/default_avatar.png', blank=True, null=True)
-    account_number = models.CharField(max_length=10)
-    bank = models.CharField(max_length=20)
+    account_number = models.CharField(max_length=10, blank=True, null=True)
+    bank = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=255, unique=True)
 

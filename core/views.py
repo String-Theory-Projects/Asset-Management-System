@@ -3,7 +3,7 @@ from decimal import Decimal
 import logging
 import requests
 
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.http import JsonResponse, HttpResponse
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
@@ -43,28 +43,24 @@ class RegisterView(APIView):
         
         if serializer.is_valid():
             try:
-                # Creating user with validated data
-                user = User.objects.create(
-                    username=serializer.validated_data['email'],
-                    last_name=serializer.validated_data['last_name'],
-                    first_name=serializer.validated_data['first_name'],
-                    email=serializer.validated_data['email'],
-                    account_number=serializer.validated_data['account_number'],
-                    bank=serializer.validated_data['bank'],
-                    avatar=serializer.validated_data.get('avatar', 'default_avatars/default_avatar.png')
-                )
-                # Set the password
-                user.set_password(request.data['password'])
-                user.save()
+                user = serializer.save()
+                return Response({
+                    'message': 'User created successfully.',
+                    'user': UserSerializer(user).data
+                }, status=status.HTTP_201_CREATED)
 
-                return Response({'message': 'User created successfully.'}, status=status.HTTP_201_CREATED)
-
+            except IntegrityError:
+                return Response({'error': 'A user with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
             except ValidationError as e:
                 return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
             except Exception as e:
-                return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response({'error': 'An unexpected error occurred. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            # Customize error messages
+            error_messages = {}
+            for field, errors in serializer.errors.items():
+                error_messages[field] = errors[0]  # Take the first error message for each field
+            return Response({'errors': error_messages}, status=status.HTTP_400_BAD_REQUEST)
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
