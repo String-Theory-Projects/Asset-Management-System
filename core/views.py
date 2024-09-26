@@ -3,6 +3,7 @@ from decimal import Decimal
 import logging
 import requests
 
+from django.db import transaction
 from django.http import JsonResponse, HttpResponse
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
@@ -21,10 +22,11 @@ from rave_python.rave_misc import generateTransactionReference
 
 
 from utils.helpers import get_cached_data, CustomJSONEncoder
+from utils.payment import initiate_flutterwave_payment
 from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
 from core import *
 from .serializers import UserSerializer
-from .models import User, Asset, HotelRoom, Payment, Vehicle
+from .models import User, Asset, HotelRoom, Transaction, Vehicle
 
 
 User = get_user_model()
@@ -188,10 +190,10 @@ class UserDataView(APIView):
 
 
 # ---------- PAYMENT VIEWS ----------
+
 class InitiatePaymentView(APIView):
     def post(self, request):
-        payment_url = "https://api.flutterwave.com/v3/payments"
-        tx_ref = generateTransactionReference(tref_pref)  
+        tx_ref = generateTransactionReference(tref_pref)
 
         try:
             customer_email = request.data["email"]
@@ -201,47 +203,58 @@ class InitiatePaymentView(APIView):
             redirect_url = request.data["redirect_url"]
             title = request.data["title"]
             description = request.data["description"]
+            asset_id = request.data["asset_id"]
+            sub_asset_id = request.data.get("sub_asset_id")
+            currency = request.data.get("currency", "NGN")
+            is_outgoing = request.data.get("is_outgoing", False)
         except KeyError as e:
             return Response({"error": f"Missing required field: {e.args[0]}"}, status=status.HTTP_400_BAD_REQUEST)
 
         payment_data = {
-        "tx_ref": tx_ref,
-        "amount": amount,  
-        "currency": request.data.get("currency", "NGN"),  # Default currency is NGN
-        "redirect_url": redirect_url, 
-        "customer": {
-            "email": customer_email,
-            "name": customer_name,
-            "phonenumber": customer_phonenumber
-        },
-        "customizations": {
-            "title": title,  
-            "description": description  
-        }
-        }
-
-
-        # Set up headers for the request, including authorization with the secret key
-        headers = {
-            "Authorization": f"Bearer {settings.FLW_SECRET_KEY}",
-            "Content-Type": "application/json"
+            "tx_ref": tx_ref,
+            "amount": amount,
+            "currency": currency,
+            "redirect_url": redirect_url,
+            "customer": {
+                "email": customer_email,
+                "name": customer_name,
+                "phonenumber": customer_phonenumber
+            },
+            "customizations": {
+                "title": title,
+                "description": description
+            }
         }
 
-        # Make the request to Flutterwave API to create the payment
-        response = requests.post(payment_url, json=payment_data, headers=headers)
+        payment_link, error = initiate_flutterwave_payment(payment_data)
 
-        # Check if the request was successful
-        if response.status_code == 200:
-            # Parse the response data
-            response_data = response.json()
+        if error:
+            return Response({"error": error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-            # Get the payment link from the response
-            payment_link = response_data.get('data', {}).get('link')
-
-            if payment_link:
-                # Return the payment link to the client
-                return Response({"payment_link": payment_link}, status=status.HTTP_200_OK)
-            else:
-                return Response({"error": "Payment link not found"}, status=status.HTTP_400_BAD_REQUEST)
+        if payment_link:
+            try:
+                with transaction.atomic(): #start a transaction to ensure that the database is consistent
+                    asset = Asset.objects.get(id=asset_id)
+                    transaction_obj = Transaction.objects.create(
+                        asset_id=asset,
+                        sub_asset_id=sub_asset_id,
+                        payment_status='pending',
+                        payment_type='card',  # TODO: confirm if card payment, adjust if needed
+                        amount=amount,
+                        currency=currency,
+                        transaction_ref=tx_ref,
+                        name=customer_name,
+                        email=customer_email,
+                        description=description,
+                        is_outgoing=is_outgoing
+                    )
+                return Response({
+                    "payment_link": payment_link,
+                    "transaction_id": transaction_obj.id
+                }, status=status.HTTP_200_OK)
+            except Asset.DoesNotExist:
+                return Response({"error": "Invalid asset_id"}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                return Response({"error": f"Failed to create transaction: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            return Response({"error": "Failed to initiate payment"}, status=response.status_code)
+            return Response({"error": "Payment link not found"}, status=status.HTTP_400_BAD_REQUEST)
