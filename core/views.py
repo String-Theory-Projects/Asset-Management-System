@@ -14,7 +14,7 @@ from django.conf import settings
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 
 from rave_python import Rave
@@ -31,7 +31,6 @@ from .models import User, Asset, HotelRoom, Transaction, Vehicle
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
-rave = Rave(settings.RAVE_PUBLIC_KEY)
 
 # ---------- AUTH VIEWS ----------
 
@@ -165,7 +164,7 @@ class UserDataView(APIView):
                     #     user_data["assets"]["machinery"].append(asset_data)
 
                 # Get user's payments
-                payments = Payment.objects.filter(asset_id__in=assets)
+                payments = Transaction.objects.filter(asset_id__in=assets)
                 for payment in payments:
                     payment_data = {
                         "id": payment.id,
@@ -192,6 +191,7 @@ class UserDataView(APIView):
 # ---------- PAYMENT VIEWS ----------
 
 class InitiatePaymentView(APIView):
+    permission_classes = [AllowAny]
     def post(self, request):
         tx_ref = generateTransactionReference(tref_pref)
 
@@ -258,3 +258,4 @@ class InitiatePaymentView(APIView):
                 return Response({"error": f"Failed to create transaction: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
             return Response({"error": "Payment link not found"}, status=status.HTTP_400_BAD_REQUEST)
+        
