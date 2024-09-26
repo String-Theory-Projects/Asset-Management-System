@@ -49,9 +49,9 @@ class ControlAssetView(APIView):
                 return Response({'error': 'Room not found for the specified hotel.'}, status=status.HTTP_404_NOT_FOUND)
 
             if action_type == 'electricity':
-                topic = f"rooms/{sub_asset_id}/electricity"
+                topic = f"rooms/{asset_id}/{sub_asset_id}/electricity"
             elif action_type == 'access':
-                topic = f"rooms/{sub_asset_id}/access"
+                topic = f"rooms/{asset_id}/{sub_asset_id}/access"
             else:
                 return Response({'error': f'Invalid action type for {asset.asset_type} asset.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -63,7 +63,7 @@ class ControlAssetView(APIView):
                 return Response({'error': 'Vehicle not found for the specified fleet.'}, status=status.HTTP_404_NOT_FOUND)
 
             if action_type == 'ignition':
-                topic = f"vehicles/{sub_asset_id}/ignition"
+                topic = f"vehicles/{asset_id}/{sub_asset_id}/ignition"
             else:
                 return Response({'error': f'Invalid action type for {asset.asset_type} asset.'}, status=status.HTTP_400_BAD_REQUEST)
 

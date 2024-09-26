@@ -97,7 +97,9 @@ def start_mqtt_subscriber():
         "rooms/+/access",
         "vehicles/+/location",
         "vehicles/+/ignition",
-        "vehicles/+/passengers"
+        "vehicles/+/passengers",
+        "vehicles/+/tampering",
+        "vehicles/+/payment"
     ]
     subscriber = MQTTSubscriber("broker.emqx.io", 1883, topics) # Replace with your MQTT broker address
     subscriber.start()
