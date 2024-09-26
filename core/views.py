@@ -47,8 +47,8 @@ class RegisterView(APIView):
                     last_name=serializer.validated_data['last_name'],
                     first_name=serializer.validated_data['first_name'],
                     email=serializer.validated_data['email'],
-                    account_number=serializer.validated_data['account_number'],
-                    bank=serializer.validated_data['bank'],
+                    account_number=serializer.validated_data.get('account_number', ''),
+                    bank=serializer.validated_data.get('bank', ''),
                     avatar=serializer.validated_data.get('avatar', 'default_avatars/default_avatar.png')
                 )
                 # Set the password

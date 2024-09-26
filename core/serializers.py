@@ -3,10 +3,11 @@ from .models import User
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 
-
 User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
+    account_number = serializers.CharField(required=False, allow_blank=True)
+    bank = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model = User
