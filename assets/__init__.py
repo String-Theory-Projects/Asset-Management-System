@@ -8,3 +8,4 @@ with open(conf_path, 'r') as file:
 
 # Access variables from conf.yaml under 'assets' app
 ROLE_CHOICES = conf['assets']['role_choices']
+

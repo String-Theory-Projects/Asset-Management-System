@@ -1,36 +1,37 @@
 import json
 from decimal import Decimal
+import logging
+import requests
+
 from django.http import JsonResponse, HttpResponse
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
-from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.response import Response
-import logging
-from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.contrib.auth import get_user_model
+from django.conf import settings
+
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-from .models import User, Asset, HotelRoom, Payment, Vehicle
+
+
+from rave_python import Rave
+from rave_python.rave_misc import generateTransactionReference 
+
+
+from utils.helpers import get_cached_data, CustomJSONEncoder
+from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
+from core import *
 from .serializers import UserSerializer
+from .models import User, Asset, HotelRoom, Payment, Vehicle
 
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+rave = Rave(settings.RAVE_PUBLIC_KEY)
 
-# Caching helper function
-def get_cached_data(cache_key, queryset):
-    data = cache.get(cache_key)
-    if not data:
-        data = list(queryset)
-        cache.set(cache_key, data, timeout=60 * 15)  # Cache for 15 minutes
-    return data
-
-class CustomJSONEncoder(DjangoJSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)
-
+# ---------- AUTH VIEWS ----------
 
 class RegisterView(APIView):
     authentication_classes = []  # Disable authentication for this view
@@ -81,6 +82,7 @@ class ProfileView(APIView):
             return Response({'message': 'Profile updated successfully.'})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+# ---------- USER VIEWS ----------
 
 class UserDataView(APIView):
     def get(self, request, *args, **kwargs):
@@ -183,3 +185,63 @@ class UserDataView(APIView):
             # Log the error
             print(f"Error: {str(e)}")
             return Response({'error': 'An error occurred while processing your request.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ---------- PAYMENT VIEWS ----------
+class InitiatePaymentView(APIView):
+    def post(self, request):
+        payment_url = "https://api.flutterwave.com/v3/payments"
+        tx_ref = generateTransactionReference(tref_pref)  
+
+        try:
+            customer_email = request.data["email"]
+            customer_name = request.data["name"]
+            customer_phonenumber = request.data["phonenumber"]
+            amount = request.data["amount"]
+            redirect_url = request.data["redirect_url"]
+            title = request.data["title"]
+            description = request.data["description"]
+        except KeyError as e:
+            return Response({"error": f"Missing required field: {e.args[0]}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        payment_data = {
+        "tx_ref": tx_ref,
+        "amount": amount,  
+        "currency": request.data.get("currency", "NGN"),  # Default currency is NGN
+        "redirect_url": redirect_url, 
+        "customer": {
+            "email": customer_email,
+            "name": customer_name,
+            "phonenumber": customer_phonenumber
+        },
+        "customizations": {
+            "title": title,  
+            "description": description  
+        }
+        }
+
+
+        # Set up headers for the request, including authorization with the secret key
+        headers = {
+            "Authorization": f"Bearer {settings.FLW_SECRET_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        # Make the request to Flutterwave API to create the payment
+        response = requests.post(payment_url, json=payment_data, headers=headers)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            # Parse the response data
+            response_data = response.json()
+
+            # Get the payment link from the response
+            payment_link = response_data.get('data', {}).get('link')
+
+            if payment_link:
+                # Return the payment link to the client
+                return Response({"payment_link": payment_link}, status=status.HTTP_200_OK)
+            else:
+                return Response({"error": "Payment link not found"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({"error": "Failed to initiate payment"}, status=response.status_code)

@@ -26,6 +26,10 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
+# Flutterwave keys
+FLW_PUBLIC_KEY = os.getenv('FLW_PUBLIC_KEY')
+FLW_SECRET_KEY = os.getenv('FLW_SECRET_KEY')
+
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'dashboard.trykeyprotocol.com']
 
 CSRF_TRUSTED_ORIGINS = [

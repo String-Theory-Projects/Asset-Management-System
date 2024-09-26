@@ -21,5 +21,8 @@ core:
     - ['electricity', 'Electricity']
     - ['ignition', 'Ignition']
     - ['passenger_count', 'Passenger Count']
+  transaction_reference_prefix: TRYKEY
+  frontend:
+    payment_redirect_url: localhost:8000/confirm
 assets:
   role_choices: ['admin','manager','viewer']
