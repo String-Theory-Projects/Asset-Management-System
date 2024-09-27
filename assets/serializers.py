@@ -8,7 +8,8 @@ User = get_user_model()
 class AssetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Asset
-        fields = '__all__'
+        fields = "__all__"
+        read_only_fields = ['id']
 
     def create(self, validated_data):
         # If you have a many-to-many field, exclude it from the creation of the object
