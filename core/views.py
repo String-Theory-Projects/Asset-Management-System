@@ -21,8 +21,9 @@ from rave_python import Rave
 from rave_python.rave_misc import generateTransactionReference 
 
 
-from utils.helpers import get_cached_data, CustomJSONEncoder
+from utils.helpers import get_cached_data, CustomJSONEncoder, send_user_email, send_user_sms
 from utils.payment import initiate_flutterwave_payment
+
 from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
 from core import *
 from .serializers import UserSerializer
@@ -255,3 +256,79 @@ class InitiatePaymentView(APIView):
         else:
             return Response({"error": "Payment link not found"}, status=status.HTTP_400_BAD_REQUEST)
         
+class VerifyPaymentView(APIView):
+    def get(self, request):
+        status = request.GET.get('status')
+        tx_ref = request.GET.get('tx_ref')
+
+        if not all([status, tx_ref]):
+            logger.error(f"Missing required parameters: status={status}, tx_ref={tx_ref}")
+            return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Use select_for_update to lock the row and ensure idempotency
+            with transaction.atomic():
+                db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
+                
+                if db_transaction.is_verified:
+                    logger.info(f"Transaction {tx_ref} already verified")
+                    return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
+
+                self.update_transaction(db_transaction, status)
+                if status == 'success':
+                    return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
+                else:
+                    return Response({"message": f"Payment status updated to {status}"}, status=status.HTTP_200_OK)
+
+        except Transaction.DoesNotExist:
+            logger.error(f"Transaction {tx_ref} not found in database")
+            return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
+        except requests.RequestException as e:
+            logger.error(f"Error verifying transaction {tx_ref}: {str(e)}")
+            return Response({"error": "Error verifying payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def update_transaction(self, transaction, status):
+        transaction.payment_status = status
+        transaction.is_verified = True
+
+        transaction.save()
+
+        # Trigger async tasks
+        send_user_sms() # NOTE: these are currently unimplemented
+        send_user_email()
+
+        logger.info(f"Transaction {transaction.transaction_ref} updated successfully")
+
+class FlutterwaveWebhookView(APIView):
+    """
+    Webhook to allow flutterwave update transaction status on db  
+    Keyword arguments:
+    argument -- description
+    Return: return_description
+    """
+    
+    def post(self, request):
+        # Verify webhook signature
+        if not self.verify_webhook_signature(request):
+            logger.error("Invalid webhook signature")
+            return Response({"error": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
+
+        event_type = request.data.get('event')
+        if event_type == 'charge.completed':
+            tx_ref = request.data['data']['tx_ref']
+            try:
+                with transaction.atomic():
+                    db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
+                    if not db_transaction.is_verified:
+                        verification_result = self.verify_flutterwave_transaction(request.data['data']['id'])
+                        if verification_result['status'] == 'success':
+                            self.update_transaction(db_transaction, verification_result)
+            except Transaction.DoesNotExist:
+                logger.error(f"Transaction {tx_ref} not found for webhook event")
+            except Exception as e:
+                logger.error(f"Error processing webhook for transaction {tx_ref}: {str(e)}")
+
+        return Response({"status": "Webhook received"}, status=status.HTTP_200_OK)
+
+    def verify_webhook_signature(self, request):
+        return settings.FLW_SECRET_HASH == request.headers.get("verif-hash")

@@ -2,6 +2,10 @@ from decimal import Decimal
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
 
+from celery import shared_task
+import sendgrid
+from sendgrid.helpers.mail import *
+
 from rest_framework.pagination import PageNumberPagination
 
 
@@ -18,6 +22,26 @@ class CustomJSONEncoder(DjangoJSONEncoder):
         if isinstance(obj, Decimal):
             return float(obj)
         return super().default(obj)
+
+
+# ----------- Email & sms helpers -------------
+@shared_task
+def send_user_email(**kwargs):
+    """Function that sends emails to users
+    
+    Args: receiver_email: str , message_details:{}
+    Return: None
+    """
+
+@shared_task
+def send_user_sms(**kwargs):
+    """Function that sends SMS messages to users
+    
+    Args: receiver_number: str , message_details:{}
+    Return: None
+    """
+    
+    pass
 
 # ----------- API helpers -------------
 

@@ -29,6 +29,7 @@ DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 # Flutterwave keys
 FLW_PUBLIC_KEY = os.getenv('FLW_PUBLIC_KEY')
 FLW_SECRET_KEY = os.getenv('FLW_SECRET_KEY')
+FLW_SECRET_HASH = os.getenv('FLW_SECRET_HASH', '')
 
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'dashboard.trykeyprotocol.com']
 
