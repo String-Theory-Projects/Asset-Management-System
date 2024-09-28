@@ -89,6 +89,7 @@ class Role(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='roles')
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='roles')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
         unique_together = ('user', 'asset')  # Ensures that each user can only have one role per asset
@@ -98,25 +99,28 @@ class Role(models.Model):
 
 
 class HotelRoom(models.Model):
-    id = models.AutoField(primary_key=True)
     hotel = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='rooms', limit_choices_to={'asset_type': 'hotel'})
-    room_number = models.CharField(max_length=10, unique=True)
+    room_number = models.CharField(max_length=10)
     room_type = models.CharField(max_length=50)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ['hotel', 'room_number']
 
     def __str__(self):
         return f"{self.room_number} - {self.room_type} in {self.hotel.asset_name}"
 
 
 class Vehicle(models.Model):
-    id = models.AutoField(primary_key=True)
     fleet = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='fleet', limit_choices_to={'asset_type': 'vehicle'})
-    brand = models.CharField(max_length=255)
-    vehicle_type = models.CharField(max_length=255)
     vehicle_number = models.CharField(max_length=255)
     brand = models.CharField(max_length=255)
+    vehicle_type = models.CharField(max_length=255)
     status = models.BooleanField(default=True)
 
+    class Meta:
+        unique_together = ['fleet', 'vehicle_number']
+
     def __str__(self):
-        return f"Vehicle {self.asset.asset_name}"
+        return f"{self.vehicle_number} - {self.brand} {self.vehicle_type} in {self.fleet.asset_name}"
