@@ -22,7 +22,7 @@ from rave_python.rave_misc import generateTransactionReference
 
 
 from utils.helpers import get_cached_data, CustomJSONEncoder, send_user_email, send_user_sms
-from utils.payment import initiate_flutterwave_payment
+from utils.payment import initiate_flutterwave_payment, verify_flutterwave_transaction
 
 from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
 from core import *
@@ -31,8 +31,9 @@ from .models import User, Asset, HotelRoom, Transaction, Vehicle
 
 
 User = get_user_model()
-logger = logging.getLogger(__name__)
 
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 # ---------- AUTH VIEWS ----------
 
 class RegisterView(APIView):
@@ -257,15 +258,29 @@ class InitiatePaymentView(APIView):
             return Response({"error": "Payment link not found"}, status=status.HTTP_400_BAD_REQUEST)
         
 class VerifyPaymentView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request):
-        status = request.GET.get('status')
         tx_ref = request.GET.get('tx_ref')
+        transaction_id = request.GET.get('transaction_id')
 
-        if not all([status, tx_ref]):
-            logger.error(f"Missing required parameters: status={status}, tx_ref={tx_ref}")
+        if not all([tx_ref, transaction_id]):
+            logger.error(f"Missing required parameters: tx_ref={tx_ref}, transaction_id={transaction_id}")
             return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            # Verify the transaction status
+            transaction_data, error = verify_flutterwave_transaction(transaction_id)
+
+            if error:
+                logger.error(f"Error verifying transaction: {error}")
+                return Response({"error": "Failed to verify transaction"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not transaction_data:
+                logger.error("No transaction data received")
+                return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
+
+            flw_status = transaction_data.get('status', '').lower()
+
             # Use select_for_update to lock the row and ensure idempotency
             with transaction.atomic():
                 db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
@@ -274,18 +289,18 @@ class VerifyPaymentView(APIView):
                     logger.info(f"Transaction {tx_ref} already verified")
                     return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
 
-                self.update_transaction(db_transaction, status)
-                if status == 'success':
+                self.update_transaction(db_transaction, flw_status)
+                if flw_status == 'successful':
                     return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
                 else:
-                    return Response({"message": f"Payment status updated to {status}"}, status=status.HTTP_200_OK)
+                    return Response({"message": f"Payment status updated to {flw_status}"}, status=status.HTTP_200_OK)
 
         except Transaction.DoesNotExist:
             logger.error(f"Transaction {tx_ref} not found in database")
             return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
-        except requests.RequestException as e:
-            logger.error(f"Error verifying transaction {tx_ref}: {str(e)}")
-            return Response({"error": "Error verifying payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+            logger.error(f"Error processing transaction {tx_ref}: {str(e)}")
+            return Response({"error": "Error processing payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def update_transaction(self, transaction, status):
         transaction.payment_status = status
