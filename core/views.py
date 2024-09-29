@@ -4,30 +4,35 @@ import logging
 import requests
 
 from django.db import transaction, IntegrityError
+from django.db.models import Q
 from django.http import JsonResponse, HttpResponse
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from django.conf import settings
+from django_filters.rest_framework import DjangoFilterBackend
+from django.shortcuts import get_object_or_404
 
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
-
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.filters import OrderingFilter
 
 from rave_python import Rave
 from rave_python.rave_misc import generateTransactionReference 
 
 
-from utils.helpers import get_cached_data, CustomJSONEncoder, send_user_email, send_user_sms
+from utils.helpers import *
 from utils.payment import initiate_flutterwave_payment, verify_flutterwave_transaction
 
 from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
 from core import *
-from .serializers import UserSerializer
+from .serializers import UserSerializer, TransactionSerializer
 from .models import User, Asset, HotelRoom, Transaction, Vehicle
+from .permissions import IsAdmin,IsManager
 
 
 User = get_user_model()
@@ -315,6 +320,7 @@ class VerifyPaymentView(APIView):
         logger.info(f"Transaction {transaction.transaction_ref} updated successfully")
 
 class FlutterwaveWebhookView(APIView):
+
     """
     Webhook to allow flutterwave update transaction status on db  
     Keyword arguments:
@@ -347,3 +353,53 @@ class FlutterwaveWebhookView(APIView):
 
     def verify_webhook_signature(self, request):
         return settings.FLW_SECRET_HASH == request.headers.get("verif-hash")
+
+class TransactionListView(APIView):
+    permission_classes = [IsAuthenticated]  # Apply authentication
+    pagination_class = TransactionPagination
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ['payment_status', 'payment_type', 'currency', 'is_outgoing']
+    ordering_fields = ['timestamp', 'amount']
+    ordering = ['-timestamp']  # Default ordering
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # Admins can see all transactions
+        if IsAdmin().has_permission(self.request, self):
+            queryset = Transaction.objects.all()
+
+        # Managers can see transactions only for assets they manage
+        elif IsManager().has_permission(self.request, self):
+            managed_assets = Asset.objects.filter(managers=user)  # Assuming managers relation exists in Asset model
+            queryset = Transaction.objects.filter(asset_id__in=managed_assets)
+
+        else:
+            # If the user is neither an admin nor a manager, they should not see anything
+            queryset = Transaction.objects.none()
+
+        # Search functionality
+        search_query = self.request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(email__icontains=search_query) |
+                Q(transaction_ref__icontains=search_query)
+            )
+
+        return queryset
+
+    def get(self, request, transaction_id=None):
+        if transaction_id:
+            transaction = get_object_or_404(Transaction, id=transaction_id)
+            serializer = TransactionSerializer(transaction)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = TransactionSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = TransactionSerializer(queryset, many=True)
+        return Response(serializer.data)

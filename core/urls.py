@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import UserDataView,RegisterView, ProfileView, InitiatePaymentView, VerifyPaymentView
+from .views import UserDataView,RegisterView, ProfileView, InitiatePaymentView, VerifyPaymentView, TransactionListView
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 # from rest_framework_simplejwt.token_blacklist.views import BlacklistView
@@ -19,4 +19,8 @@ urlpatterns = [
     path('token/', TokenObtainPairView.as_view(permission_classes=[AllowAny]), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('payment/init/', InitiatePaymentView.as_view(), name='initiate_payment'),
-    path('payment/verify/', VerifyPaymentView.as_view(), name='verify_payment'),]
+    path('payment/verify/', VerifyPaymentView.as_view(), name='verify_payment'),
+    path('transactions/', TransactionListView.as_view(), name='transaction-list'),
+    path('transactions/<int:transaction_id>/', TransactionListView.as_view(), name='transaction-detail'),
+
+    ]

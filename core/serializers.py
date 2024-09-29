@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User
+from .models import User, Transaction
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 
@@ -42,3 +42,19 @@ class UserSerializer(serializers.ModelSerializer):
         if 'avatar' not in validated_data:
             validated_data['avatar'] = 'default_avatars/default_avatar.png'
         return User.objects.create_user(**validated_data)
+    
+class TransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Transaction
+        fields = [
+            'id', 
+            'name', 
+            'email', 
+            'transaction_ref', 
+            'amount', 
+            'currency', 
+            'payment_status', 
+            'payment_type', 
+            'is_outgoing', 
+            'timestamp'
+        ]
