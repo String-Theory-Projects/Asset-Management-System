@@ -1,6 +1,10 @@
 from decimal import Decimal
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
+
+
 
 from celery import shared_task
 import sendgrid
@@ -28,6 +32,25 @@ class TransactionPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
+
+def validate_field(data, field_name: str, expected_types, required: bool = True, default = None):
+    value = data.get(field_name, default)
+
+    if field_name == 'email':
+        validate_email(value)
+    
+    if required and value is None:
+        raise KeyError(field_name)
+    results = set()
+    for expected_type in expected_types:
+        if value is not None and not isinstance(value, expected_type):
+            results.add(False)
+        else:
+            results.add(True)
+    if True not in results:
+        raise ValueError(f"Invalid data type for {field_name}. Expected {expected_types}.")
+    
+    return value
 
 # ----------- Email & sms helpers -------------
 @shared_task

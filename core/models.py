@@ -23,7 +23,7 @@ class User(AbstractUser):
 
 
 class Transaction(models.Model):
-    asset_id = models.ForeignKey('Asset', related_name='transactions', on_delete=models.CASCADE)
+    asset = models.ForeignKey('Asset', related_name='transactions', on_delete=models.CASCADE)
     sub_asset_id = models.IntegerField(null=True, blank=True)
     payment_status = models.CharField(max_length=10, choices=PAYMENT_STATUS_CHOICES)
     payment_type = models.CharField(max_length=100, choices=[('card','Card'), ('transfer', 'Transfer'),('mobile_money', 'Mobile_money')])

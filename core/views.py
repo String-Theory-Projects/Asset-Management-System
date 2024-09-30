@@ -13,6 +13,7 @@ from django.contrib.auth import get_user_model
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
+from django.core.validators import validate_email
 
 from rest_framework import status
 from rest_framework.response import Response
@@ -187,8 +188,7 @@ class UserDataView(APIView):
             
         except Exception as e:
             # Log the error
-            print(f"Error: {str(e)}")
-            return Response({'error': 'An error occurred while processing your request.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': 'An error occurred while processing your request.'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ---------- PAYMENT VIEWS ----------
@@ -199,19 +199,27 @@ class InitiatePaymentView(APIView):
         tx_ref = generateTransactionReference(tref_pref)
 
         try:
-            customer_email = request.data["email"]
-            customer_name = request.data["name"]
-            customer_phonenumber = request.data["phonenumber"]
-            amount = request.data["amount"]
-            redirect_url = request.data["redirect_url"]
-            title = request.data["title"]
-            description = request.data["description"]
-            asset_id = request.data["asset_id"]
-            sub_asset_id = request.data.get("sub_asset_id")
-            currency = request.data.get("currency", "NGN")
-            is_outgoing = request.data.get("is_outgoing", False)
+            # Validate and retrieve fields
+            customer_email = validate_field(request.data, "email", [str])
+            customer_name = validate_field(request.data, "name", [str])
+            customer_phonenumber = validate_field(request.data, "phonenumber", [str])
+            amount = validate_field(request.data, "amount", [float, int])  # Allow int for amounts as well
+            redirect_url = validate_field(request.data, "redirect_url", [str])
+            title = validate_field(request.data, "title", [str])
+            description = validate_field(request.data, "description", [str])
+            asset_id = validate_field(request.data, "asset_id", [int])
+            
+            # Optional fields
+            sub_asset_id = validate_field(request.data, "sub_asset_id", [int], required=False)
+            currency = validate_field(request.data, "currency", [str], required=False, default="NGN")
+            is_outgoing = validate_field(request.data, "is_outgoing", [bool], required=False, default=False)
+
         except KeyError as e:
             return Response({"error": f"Missing required field: {e.args[0]}"}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         payment_data = {
             "tx_ref": tx_ref,
@@ -229,17 +237,18 @@ class InitiatePaymentView(APIView):
             }
         }
 
+
         payment_link, error = initiate_flutterwave_payment(payment_data)
 
         if error:
-            return Response({"error": error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
 
         if payment_link:
             try:
                 with transaction.atomic(): #start a transaction to ensure that the database is consistent
                     asset = Asset.objects.get(id=asset_id)
                     transaction_obj = Transaction.objects.create(
-                        asset_id=asset,
+                        asset=asset,
                         sub_asset_id=sub_asset_id,
                         payment_status='pending',
                         payment_type='card',  # TODO: confirm if card payment, adjust if needed
