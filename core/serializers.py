@@ -6,15 +6,15 @@ from django.core.exceptions import ValidationError
 # User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
-    user_id = serializers.SerializerMethodField()
+    # user_id = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['user_id', 'first_name', 'last_name', 'email', 'account_number', 'bank', 'avatar']
+        fields = ['first_name', 'last_name', 'email', 'account_number', 'bank', 'avatar']
     
-    #function to get the user id
-    def get_user_id(self, obj):
-        return obj.pk
+    #function to get the user id if needed, for testing purposes
+    # def get_user_id(self, obj):
+    #     return obj.pk
 
     def validate_email(self, value):
         if User.objects.filter(email=value).exists():

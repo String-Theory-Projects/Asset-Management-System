@@ -124,7 +124,6 @@ class Vehicle(models.Model):
     brand = models.CharField(max_length=255)
     vehicle_type = models.CharField(max_length=255)
     vehicle_number = models.CharField(max_length=255)
-    brand = models.CharField(max_length=255)
     status = models.BooleanField(default=True)
 
     def __str__(self):

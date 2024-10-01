@@ -19,11 +19,11 @@ class AssetSerializer(serializers.ModelSerializer):
         user_assets = Asset.objects.filter(roles__user__id=user_id).order_by('created_at')
         # Getting the asset ordinal number from a list of assets
         asset_number = list(user_assets).index(obj) + 1
-        formatted_user_id = f"{user_id:05}"
-        formatted_asset_number = f"{asset_number:03}"
+        formatted_user_id = f"{user_id:05}" # Limiting the user id to five digits
+        formatted_asset_number = f"{asset_number:03}" # Limiting the asset_number to three digits
 
         return f"TP{formatted_user_id}{formatted_asset_number}"
-
+    
     def create(self, validated_data):
         # If you have a many-to-many field, exclude it from the creation of the object
         users = validated_data.pop('users', None)  # pop the 'users' field, if it exists
