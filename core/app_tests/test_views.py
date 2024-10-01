@@ -12,6 +12,9 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+class gitHubIntegrationTest(TestCase):
+    def fail(self):
+        self.assertEqual(1,2)
 
 class InitiatePaymentViewTests(TestCase):
     def setUp(self):
