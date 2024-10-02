@@ -1,5 +1,5 @@
 from django.db.models import Sum
-from core.models import Asset, Payment
+from .models import Payment
 
 def payment_aggregator(asset):
     

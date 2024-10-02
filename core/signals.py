@@ -1,6 +1,6 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-from .models import Payment, Asset
+from .models import Payment
 from .utils import payment_aggregator
 
 @receiver(post_save, sender=Payment)
