@@ -7,7 +7,7 @@ mkdir -p $APP_NAME/tests/{integration,functional,performance}
 
 # Create test files
 touch $APP_NAME/tests/__init__.py
-touch $APP_NAME/tests/test_{models,views,forms,urls,api,utils,managers,signals,middleware,commands}.py
+touch $APP_NAME/tests/test_{models,views,forms,urls,api,utils}.py
 
 # Create integration test files
 touch $APP_NAME/tests/integration/__init__.py
