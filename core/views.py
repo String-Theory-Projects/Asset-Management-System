@@ -1,36 +1,46 @@
 import json
 from decimal import Decimal
+import logging
+import requests
+
+from django.db import transaction, IntegrityError
+from django.db.models import Q
 from django.http import JsonResponse, HttpResponse
 from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
-from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.response import Response
-import logging
-from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
-from .models import User, Asset, HotelRoom, Payment, Vehicle
-from .serializers import UserSerializer
+from django.contrib.auth import get_user_model
+from django.conf import settings
+from django_filters.rest_framework import DjangoFilterBackend
+from django.shortcuts import get_object_or_404
+from django.core.validators import validate_email
+
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.filters import OrderingFilter
+
+from rave_python import Rave
+from rave_python.rave_misc import generateTransactionReference 
+
+
+from utils.helpers import *
+from utils.payment import initiate_flutterwave_payment, verify_flutterwave_transaction
+
+from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
+from core import *
+from .serializers import UserSerializer, TransactionSerializer
+from .models import User, Asset, HotelRoom, Transaction, Vehicle
+from .permissions import IsAdmin,IsManager
 
 
 User = get_user_model()
-logger = logging.getLogger(__name__)
 
-# Caching helper function
-def get_cached_data(cache_key, queryset):
-    data = cache.get(cache_key)
-    if not data:
-        data = list(queryset)
-        cache.set(cache_key, data, timeout=60 * 15)  # Cache for 15 minutes
-    return data
-
-class CustomJSONEncoder(DjangoJSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return float(obj)
-        return super().default(obj)
-
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+# ---------- AUTH VIEWS ----------
 
 class RegisterView(APIView):
     authentication_classes = []  # Disable authentication for this view
@@ -41,28 +51,24 @@ class RegisterView(APIView):
         
         if serializer.is_valid():
             try:
-                # Creating user with validated data
-                user = User.objects.create(
-                    username=serializer.validated_data['email'],
-                    last_name=serializer.validated_data['last_name'],
-                    first_name=serializer.validated_data['first_name'],
-                    email=serializer.validated_data['email'],
-                    account_number=serializer.validated_data['account_number'],
-                    bank=serializer.validated_data['bank'],
-                    avatar=serializer.validated_data.get('avatar', 'default_avatars/default_avatar.png')
-                )
-                # Set the password
-                user.set_password(request.data['password'])
-                user.save()
+                user = serializer.save()
+                return Response({
+                    'message': 'User created successfully.',
+                    'user': UserSerializer(user).data
+                }, status=status.HTTP_201_CREATED)
 
-                return Response({'message': 'User created successfully.'}, status=status.HTTP_201_CREATED)
-
+            except IntegrityError:
+                return Response({'error': 'A user with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
             except ValidationError as e:
                 return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
             except Exception as e:
-                return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response({'error': 'An unexpected error occurred. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            # Customize error messages
+            error_messages = {}
+            for field, errors in serializer.errors.items():
+                error_messages[field] = errors[0]  # Take the first error message for each field
+            return Response({'errors': error_messages}, status=status.HTTP_400_BAD_REQUEST)
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
@@ -81,6 +87,7 @@ class ProfileView(APIView):
             return Response({'message': 'Profile updated successfully.'})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+# ---------- USER VIEWS ----------
 
 class UserDataView(APIView):
     def get(self, request, *args, **kwargs):
@@ -161,7 +168,7 @@ class UserDataView(APIView):
                     #     user_data["assets"]["machinery"].append(asset_data)
 
                 # Get user's payments
-                payments = Payment.objects.filter(asset_id__in=assets)
+                payments = Transaction.objects.filter(asset_id__in=assets)
                 for payment in payments:
                     payment_data = {
                         "id": payment.id,
@@ -181,5 +188,227 @@ class UserDataView(APIView):
             
         except Exception as e:
             # Log the error
-            print(f"Error: {str(e)}")
-            return Response({'error': 'An error occurred while processing your request.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': 'An error occurred while processing your request.'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+# ---------- PAYMENT VIEWS ----------
+
+class InitiatePaymentView(APIView):
+    permission_classes = [AllowAny]
+    def post(self, request):
+        tx_ref = generateTransactionReference(tref_pref)
+
+        try:
+            # Validate and retrieve fields
+            customer_email = validate_field(request.data, "email", [str])
+            customer_name = validate_field(request.data, "name", [str])
+            customer_phonenumber = validate_field(request.data, "phonenumber", [str])
+            amount = validate_field(request.data, "amount", [float, int])  # Allow int for amounts as well
+            redirect_url = validate_field(request.data, "redirect_url", [str])
+            title = validate_field(request.data, "title", [str])
+            description = validate_field(request.data, "description", [str])
+            asset_id = validate_field(request.data, "asset_id", [int])
+            
+            # Optional fields
+            sub_asset_id = validate_field(request.data, "sub_asset_id", [int], required=False)
+            currency = validate_field(request.data, "currency", [str], required=False, default="NGN")
+            is_outgoing = validate_field(request.data, "is_outgoing", [bool], required=False, default=False)
+
+        except KeyError as e:
+            return Response({"error": f"Missing required field: {e.args[0]}"}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        payment_data = {
+            "tx_ref": tx_ref,
+            "amount": amount,
+            "currency": currency,
+            "redirect_url": redirect_url,
+            "customer": {
+                "email": customer_email,
+                "name": customer_name,
+                "phonenumber": customer_phonenumber
+            },
+            "customizations": {
+                "title": title,
+                "description": description
+            }
+        }
+
+
+        payment_link, error = initiate_flutterwave_payment(payment_data)
+
+        if error:
+            return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
+
+        if payment_link:
+            try:
+                with transaction.atomic(): #start a transaction to ensure that the database is consistent
+                    asset = Asset.objects.get(id=asset_id)
+                    transaction_obj = Transaction.objects.create(
+                        asset=asset,
+                        sub_asset_id=sub_asset_id,
+                        payment_status='pending',
+                        payment_type='card',  # TODO: confirm if card payment, adjust if needed
+                        amount=amount,
+                        currency=currency,
+                        transaction_ref=tx_ref,
+                        name=customer_name,
+                        email=customer_email,
+                        description=description,
+                        is_outgoing=is_outgoing
+                    )
+                return Response({
+                    "payment_link": payment_link,
+                    "transaction_id": transaction_obj.id
+                }, status=status.HTTP_200_OK)
+            except Asset.DoesNotExist:
+                return Response({"error": "Invalid asset_id"}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                return Response({"error": f"Failed to create transaction: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            return Response({"error": "Payment link not found"}, status=status.HTTP_400_BAD_REQUEST)
+        
+class VerifyPaymentView(APIView):
+    permission_classes = [AllowAny]
+    def get(self, request):
+        tx_ref = request.GET.get('tx_ref')
+        transaction_id = request.GET.get('transaction_id')
+
+        if not all([tx_ref, transaction_id]):
+            logger.error(f"Missing required parameters: tx_ref={tx_ref}, transaction_id={transaction_id}")
+            return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Verify the transaction status
+            transaction_data, error = verify_flutterwave_transaction(transaction_id)
+
+            if error:
+                logger.error(f"Error verifying transaction: {error}")
+                return Response({"error": "Failed to verify transaction"}, status=status.HTTP_400_BAD_REQUEST)
+
+            if not transaction_data:
+                logger.error("No transaction data received")
+                return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
+
+            flw_status = transaction_data.get('status', '').lower()
+
+            # Use select_for_update to lock the row and ensure idempotency
+            with transaction.atomic():
+                db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
+                
+                if db_transaction.is_verified:
+                    logger.info(f"Transaction {tx_ref} already verified")
+                    return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
+
+                self.update_transaction(db_transaction, flw_status)
+                if flw_status == 'successful':
+                    return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
+                else:
+                    return Response({"message": f"Payment status updated to {flw_status}"}, status=status.HTTP_200_OK)
+
+        except Transaction.DoesNotExist:
+            logger.error(f"Transaction {tx_ref} not found in database")
+            return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error processing transaction {tx_ref}: {str(e)}")
+            return Response({"error": "Error processing payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def update_transaction(self, transaction, status):
+        transaction.payment_status = status
+        transaction.is_verified = True
+
+        transaction.save()
+
+        # Trigger async tasks
+        send_user_sms() # NOTE: these are currently unimplemented
+        send_user_email()
+
+        logger.info(f"Transaction {transaction.transaction_ref} updated successfully")
+
+class FlutterwaveWebhookView(APIView):
+
+    """
+    Webhook to allow flutterwave update transaction status on db  
+    Keyword arguments:
+    argument -- description
+    Return: return_description
+    """
+    
+    def post(self, request):
+        # Verify webhook signature
+        if not self.verify_webhook_signature(request):
+            logger.error("Invalid webhook signature")
+            return Response({"error": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
+
+        event_type = request.data.get('event')
+        if event_type == 'charge.completed':
+            tx_ref = request.data['data']['tx_ref']
+            try:
+                with transaction.atomic():
+                    db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
+                    if not db_transaction.is_verified:
+                        verification_result = self.verify_flutterwave_transaction(request.data['data']['id'])
+                        if verification_result['status'] == 'success':
+                            self.update_transaction(db_transaction, verification_result)
+            except Transaction.DoesNotExist:
+                logger.error(f"Transaction {tx_ref} not found for webhook event")
+            except Exception as e:
+                logger.error(f"Error processing webhook for transaction {tx_ref}: {str(e)}")
+
+        return Response({"status": "Webhook received"}, status=status.HTTP_200_OK)
+
+    def verify_webhook_signature(self, request):
+        return settings.FLW_SECRET_HASH == request.headers.get("verif-hash")
+
+class TransactionListView(APIView):
+    permission_classes = [IsAuthenticated]  # Apply authentication
+    pagination_class = TransactionPagination
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = ['payment_status', 'payment_type', 'currency', 'is_outgoing']
+    ordering_fields = ['timestamp', 'amount']
+    ordering = ['-timestamp']  # Default ordering
+
+    def get_queryset(self):
+        user = self.request.user
+
+        # Admins can see all transactions
+        if IsAdmin().has_permission(self.request, self):
+            queryset = Transaction.objects.all()
+
+        # Managers can see transactions only for assets they manage
+        elif IsManager().has_permission(self.request, self):
+            managed_assets = Asset.objects.filter(managers=user)  # Assuming managers relation exists in Asset model
+            queryset = Transaction.objects.filter(asset_id__in=managed_assets)
+
+        else:
+            # If the user is neither an admin nor a manager, they should not see anything
+            queryset = Transaction.objects.none()
+
+        # Search functionality
+        search_query = self.request.query_params.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(email__icontains=search_query) |
+                Q(transaction_ref__icontains=search_query)
+            )
+
+        return queryset
+
+    def get(self, request, transaction_id=None):
+        if transaction_id:
+            transaction = get_object_or_404(Transaction, id=transaction_id)
+            serializer = TransactionSerializer(transaction)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = TransactionSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = TransactionSerializer(queryset, many=True)
+        return Response(serializer.data)
