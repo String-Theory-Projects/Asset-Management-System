@@ -120,6 +120,12 @@ class CheckSubAssetStatusView(APIView):
                 object_id=sub_asset_id, event_type='electricity'
             ).first()
 
+            # Get the last occupancy event
+            occupancy_event = AssetEvent.objects.filter(
+                content_type=ContentType.objects.get_for_model(HotelRoom),
+                object_id=sub_asset_id, event_type='occupancy'
+            ).first()
+
             data = {
                 'last_access_command': {
                     'command': access_event.data if access_event else 'No access command found',
@@ -128,6 +134,10 @@ class CheckSubAssetStatusView(APIView):
                 'last_electricity_command': {
                     'command': electricity_event.data if electricity_event else 'No electricity command found',
                     'timestamp': electricity_event.timestamp if electricity_event else None
+                },
+                'last_occupancy': {
+                    'status': occupancy_event.data if occupancy_event else 'No occupancy data found',
+                    'timestamp': occupancy_event.timestamp if occupancy_event else None
                 }
             }
 
@@ -144,10 +154,30 @@ class CheckSubAssetStatusView(APIView):
                 object_id=sub_asset_id, event_type='ignition'
             ).first()
 
+            # Get the last passenger count event
+            passenger_count_event = AssetEvent.objects.filter(
+                content_type=ContentType.objects.get_for_model(Vehicle),
+                object_id=sub_asset_id, event_type='passenger_count'
+            ).first()
+
+            # Get the last location event
+            location_event = AssetEvent.objects.filter(
+                content_type=ContentType.objects.get_for_model(Vehicle),
+                object_id=sub_asset_id, event_type='location'
+            ).first()
+
             data = {
                 'last_ignition_command': {
                     'command': ignition_event.data if ignition_event else 'No ignition command found',
                     'timestamp': ignition_event.timestamp if ignition_event else None
+                },
+                'last_passenger_count': {
+                    'count': passenger_count_event.data if passenger_count_event else 'No passenger count data found',
+                    'timestamp': passenger_count_event.timestamp if passenger_count_event else None
+                },
+                'last_location': {
+                    'location': location_event.data if location_event else 'No location data found',
+                    'timestamp': location_event.timestamp if location_event else None
                 }
             }
 
