@@ -178,6 +178,10 @@ class CheckSubAssetStatusView(APIView):
                 'last_location': {
                     'location': location_event.data if location_event else 'No location data found',
                     'timestamp': location_event.timestamp if location_event else None
+                },
+                'total_distance': {
+                    'value': vehicle.total_distance,
+                    'unit': 'kilometers'
                 }
             }
 
