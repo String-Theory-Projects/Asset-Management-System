@@ -21,34 +21,48 @@ class MQTTSubscriber(threading.Thread):
     def on_message(self, client, userdata, message):
         data = message.payload.decode()
         print(f"Received message on {message.topic}: {data}")
-
+    
         try:
             asset_id, object_id, event_type, content_type = extract_event_info(message.topic)
             print(f"Extracted info: asset_id={asset_id}, object_id={object_id}, event_type={event_type}")
-
+    
             # Check if the Asset exists
             try:
                 asset = Asset.objects.get(id=asset_id)
             except Asset.DoesNotExist:
                 print(f"Asset with ID {asset_id} does not exist.")
                 return
-
-            # Check if the Vehicle exists
-            try:
-                vehicle = Vehicle.objects.get(vehicle_number=object_id, fleet=asset)
-            except Vehicle.DoesNotExist:
-                print(f"Vehicle with number {object_id} does not exist for asset {asset_id}.")
+    
+            # Determine if it's a vehicle or hotel room based on the content_type
+            if content_type == ContentType.objects.get_for_model(Vehicle):
+                try:
+                    sub_asset = Vehicle.objects.get(vehicle_number=object_id, fleet=asset)
+                    # Use vehicle_number as object_id
+                    stored_object_id = sub_asset.vehicle_number
+                except Vehicle.DoesNotExist:
+                    print(f"Vehicle with number {object_id} does not exist for asset {asset_id}.")
+                    return
+            elif content_type == ContentType.objects.get_for_model(HotelRoom):
+                try:
+                    sub_asset = HotelRoom.objects.get(room_number=object_id, hotel=asset)
+                    # Use room_number as object_id
+                    stored_object_id = sub_asset.room_number
+                except HotelRoom.DoesNotExist:
+                    print(f"Hotel room with number {object_id} does not exist for asset {asset_id}.")
+                    return
+            else:
+                print(f"Unsupported content type: {content_type}")
                 return
-
+    
             AssetEvent.objects.create(
                 asset=asset,
                 content_type=content_type,
-                object_id=vehicle.id,
+                object_id=stored_object_id,  
                 event_type=event_type,
                 data=data,
                 timestamp=timezone.now()
             )
-            print(f"Successfully created AssetEvent for asset_id={asset_id}, vehicle_number={object_id}")
+            print(f"Successfully created AssetEvent for asset_id={asset_id}, {content_type.model}={stored_object_id}")
         except Exception as e:
             print(f"Error processing message: {str(e)}")
 
