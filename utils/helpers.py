@@ -13,7 +13,7 @@ from sendgrid.helpers.mail import *
 from rest_framework.pagination import PageNumberPagination
 
 
-# ----------- Data manipulation -------------
+# ----------- Data helpers -------------
 def get_cached_data(cache_key, queryset):
     data = cache.get(cache_key)
     if not data:
