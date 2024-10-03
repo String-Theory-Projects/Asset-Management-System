@@ -1,20 +1,22 @@
 from django.test import TestCase
 from django.urls import reverse
-from django.contrib.auth.models import User
 from django.utils import timezone
-from rest_framework import status
-from rest_framework.test import APIClient
-from decimal import Decimal
-from ..models import Asset, AssetEvent, Role, Transaction
+from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth import get_user_model
+
+from rest_framework import status
+from rest_framework.test import APIClient
+
+from decimal import Decimal
+from ..models import Asset, AssetEvent, Role, Transaction
+
+from unittest.mock import patch, Mock
+
 
 
 User = get_user_model()
 
-class gitHubIntegrationTest(TestCase):
-    def fail(self):
-        self.assertEqual(1,2)
 
 class InitiatePaymentViewTests(TestCase):
     def setUp(self):
@@ -168,3 +170,90 @@ class InitiatePaymentViewTests(TestCase):
         pass
 
 
+class VerifyPaymentViewTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = reverse('verify_payment')
+                # Create test assets
+        self.asset1 = Asset.objects.create(
+            id=1,
+            asset_type='vehicle',
+            asset_name='Test Vehicle 1',
+            location='Test Location 1',
+            details={'make': 'Toyota', 'model': 'Corolla'},
+            account_number='1234567890',
+            bank='Test Bank'
+        )
+        self.transaction = Transaction.objects.create(
+            transaction_ref='tx_ref_1',
+            payment_status='pending',
+            is_verified=False,
+            amount=Decimal('5000.00'),
+            currency='NGN',
+            asset = self.asset1
+        )
+
+    @patch('core.views.verify_flutterwave_transaction')
+    def test_successful_verification(self, mock_verify):
+        mock_verify.return_value = ({'status': 'successful', 'amount': '5000.00', 'currency': 'NGN'}, None)
+        mock_verify.get.return_value.status_code = 200
+        response = self.client.get(self.url, {'tx_ref': 'tx_ref_1', 'transaction_id': 'valid_transaction_id','status':'successful'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['message'], "Payment verified successfully")
+        self.transaction.refresh_from_db()
+        self.assertEqual(self.transaction.payment_status.lower(), 'completed')
+        self.assertTrue(self.transaction.is_verified)
+
+    @patch('core.views.verify_flutterwave_transaction')
+    def test_failed_verification(self, mock_verify):
+        mock_verify.return_value = ({'status': 'failed', 'amount': '5000.00', 'currency': 'NGN'}, None)
+        mock_verify.get.return_value.status_code = 400
+        response = self.client.get(self.url, {'tx_ref': 'tx_ref_1', 'transaction_id': 'failed_transaction_id','status':'failed'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['message'], "Payment status updated to failed")
+        self.transaction.refresh_from_db()
+        self.assertEqual(self.transaction.payment_status, 'failed')
+        self.assertTrue(self.transaction.is_verified)
+
+    @patch('core.views.verify_flutterwave_transaction')
+    def test_flutterwave_verification_error(self, mock_verify):
+        mock_verify.return_value = (None, "API Error")
+        response = self.client.get(self.url, {'tx_ref': 'tx_ref_1', 'transaction_id': 'error_transaction_id','status':'successful'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error'], "Failed to verify transaction")
+
+    @patch('core.views.verify_flutterwave_transaction')
+    def test_different_flutterwave_statuses(self, mock_verify):
+        statuses = ['pending', 'canceled']
+        for expected_status in statuses:
+            mock_verify.return_value = ({'status': expected_status, 'amount': '5000.00', 'currency': 'NGN'}, None)
+            response = self.client.get(self.url, {'tx_ref': 'tx_ref_1', 'transaction_id': f'{expected_status}_transaction_id','status':expected_status})
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data['message'], f"Payment status updated to {expected_status}")
+            self.transaction.refresh_from_db()
+            self.assertEqual(self.transaction.payment_status, expected_status)
+
+    def test_missing_parameters(self):
+        response = self.client.get(self.url, {'tx_ref': 'tx_ref_1'})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['error'], "Missing required parameters")
+    @patch('core.views.verify_flutterwave_transaction')
+    def test_already_verified_transaction(self,mock_verify):
+        mock_verify.return_value = ({'status': 'successful', 'amount': '5000.00', 'currency': 'NGN'}, None)
+        mock_verify.get.return_value.status_code = 200
+        self.transaction.is_verified = True
+        self.transaction.save()
+        response = self.client.get(self.url, {'tx_ref': 'tx_ref_1', 'transaction_id': 'test_id', 'status':'successful'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['message'], "Payment verified successfully")
+
+    @patch('core.views.verify_flutterwave_transaction')
+    @patch('core.views.send_user_sms.delay')
+    @patch('core.views.send_user_email.delay')
+    def test_async_task_triggering(self, mock_email, mock_sms, mock_verify): # Reinstate this test when the async functions are created
+        # mock_verify.return_value = ({'status': 'successful', 'amount': '5000.00', 'currency': 'NGN'}, None)
+        # response = self.client.get(self.url, {'tx_ref': 'tx_ref_1', 'transaction_id': 'test_id','status':'successful'})
+        # self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # mock_sms.assert_called_once()
+        # mock_email.assert_called_once()
+        pass

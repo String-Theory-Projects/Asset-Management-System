@@ -273,41 +273,45 @@ class InitiatePaymentView(APIView):
         
 class VerifyPaymentView(APIView):
     permission_classes = [AllowAny]
+
     def get(self, request):
         tx_ref = request.GET.get('tx_ref')
         transaction_id = request.GET.get('transaction_id')
+        status_param = request.GET.get('status')
 
-        if not all([tx_ref, transaction_id]):
-            logger.error(f"Missing required parameters: tx_ref={tx_ref}, transaction_id={transaction_id}")
+        if not all([tx_ref, status_param]):
+            logger.error(f"Missing required parameters: tx_ref={tx_ref}, status={status_param}")
             return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Verify the transaction status
-            transaction_data, error = verify_flutterwave_transaction(transaction_id)
-
-            if error:
-                logger.error(f"Error verifying transaction: {error}")
-                return Response({"error": "Failed to verify transaction"}, status=status.HTTP_400_BAD_REQUEST)
-
-            if not transaction_data:
-                logger.error("No transaction data received")
-                return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
-
-            flw_status = transaction_data.get('status', '').lower()
-
-            # Use select_for_update to lock the row and ensure idempotency
             with transaction.atomic():
                 db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
                 
-                if db_transaction.is_verified:
+                if db_transaction.is_verified and db_transaction.payment_status == status_param: #transaction already confirmed and update is same status
                     logger.info(f"Transaction {tx_ref} already verified")
                     return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
 
-                self.update_transaction(db_transaction, flw_status)
-                if flw_status == 'successful':
+                if status_param.lower() == 'failed':
+                    self.update_transaction(db_transaction, 'failed')
+                    logger.info(f"Transaction {tx_ref} marked as failed")
+                    return Response({"message": "Payment status updated to failed"}, status=status.HTTP_400_BAD_REQUEST)
+
+                # Verify the transaction status with Flutterwave
+                transaction_data, error = verify_flutterwave_transaction(transaction_id)
+
+                if error:
+                    logger.error(f"Error verifying transaction: {error}")
+                    return Response({"error": "Failed to verify transaction"}, status=status.HTTP_400_BAD_REQUEST)
+
+                if not transaction_data:
+                    logger.error("No transaction data received")
+                    return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
+                transaction_status = 'completed' if transaction_data.get('status') == 'successful' else status_param #convert transaction status to completed to fit database model
+                self.update_transaction(db_transaction, transaction_status)
+                if status_param == 'successful':
                     return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
                 else:
-                    return Response({"message": f"Payment status updated to {flw_status}"}, status=status.HTTP_200_OK)
+                    return Response({"message": f"Payment status updated to {status_param}"}, status=status.HTTP_200_OK)
 
         except Transaction.DoesNotExist:
             logger.error(f"Transaction {tx_ref} not found in database")
@@ -316,15 +320,16 @@ class VerifyPaymentView(APIView):
             logger.error(f"Error processing transaction {tx_ref}: {str(e)}")
             return Response({"error": "Error processing payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def update_transaction(self, transaction, status):
-        transaction.payment_status = status
+    def update_transaction(self, transaction, status_param):
+
+        transaction.payment_status = status_param
         transaction.is_verified = True
 
         transaction.save()
 
         # Trigger async tasks
-        send_user_sms() # NOTE: these are currently unimplemented
-        send_user_email()
+        # send_user_sms.delay() # NOTE: these are currently unimplemented
+        # send_user_email.delay()
 
         logger.info(f"Transaction {transaction.transaction_ref} updated successfully")
 
