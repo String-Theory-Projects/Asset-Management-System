@@ -3,6 +3,7 @@ import paho.mqtt.client as mqtt
 from core.models import AssetEvent, HotelRoom, Vehicle, Asset
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
+import math
 
 class MQTTSubscriber(threading.Thread):
     def __init__(self, broker, port, topics):
@@ -21,50 +22,79 @@ class MQTTSubscriber(threading.Thread):
     def on_message(self, client, userdata, message):
         data = message.payload.decode()
         print(f"Received message on {message.topic}: {data}")
-    
+
         try:
             asset_id, object_id, event_type, content_type = extract_event_info(message.topic)
             print(f"Extracted info: asset_id={asset_id}, object_id={object_id}, event_type={event_type}")
-    
+
             # Check if the Asset exists
             try:
                 asset = Asset.objects.get(id=asset_id)
             except Asset.DoesNotExist:
                 print(f"Asset with ID {asset_id} does not exist.")
                 return
-    
+
             # Determine if it's a vehicle or hotel room based on the content_type
             if content_type == ContentType.objects.get_for_model(Vehicle):
                 try:
-                    sub_asset = Vehicle.objects.get(vehicle_number=object_id, fleet=asset)
-                    # Use vehicle_number as object_id
-                    stored_object_id = sub_asset.vehicle_number
+                    vehicle = Vehicle.objects.get(vehicle_number=object_id, fleet=asset)
+                    stored_object_id = vehicle.vehicle_number
+
+                    if event_type == 'location':
+                        try:
+                            lat, lon = map(float, data.split(','))
+                            if self.is_valid_location(lat, lon):
+                                vehicle.update_location(lat, lon)
+                                print(f"Updated location for vehicle {object_id}: lat={lat}, lon={lon}")
+                            else:
+                                print(f"Invalid or potentially dangerous location data: lat={lat}, lon={lon}")
+                                return
+                        except ValueError:
+                            print(f"Invalid GPS data format: {data}")
+                            return
+
                 except Vehicle.DoesNotExist:
                     print(f"Vehicle with number {object_id} does not exist for asset {asset_id}.")
                     return
+
             elif content_type == ContentType.objects.get_for_model(HotelRoom):
                 try:
-                    sub_asset = HotelRoom.objects.get(room_number=object_id, hotel=asset)
-                    # Use room_number as object_id
-                    stored_object_id = sub_asset.room_number
+                    room = HotelRoom.objects.get(room_number=object_id, hotel=asset)
+                    stored_object_id = room.room_number
                 except HotelRoom.DoesNotExist:
                     print(f"Hotel room with number {object_id} does not exist for asset {asset_id}.")
                     return
             else:
                 print(f"Unsupported content type: {content_type}")
                 return
-    
+
             AssetEvent.objects.create(
                 asset=asset,
                 content_type=content_type,
-                object_id=stored_object_id,  
+                object_id=stored_object_id,
                 event_type=event_type,
                 data=data,
                 timestamp=timezone.now()
             )
             print(f"Successfully created AssetEvent for asset_id={asset_id}, {content_type.model}={stored_object_id}")
+
         except Exception as e:
             print(f"Error processing message: {str(e)}")
+
+    def is_valid_location(self, lat, lon):
+        """
+        Validate the latitude and longitude values.
+        """
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+            return False
+        
+        # Check for exact 0,0 coordinates (null island)
+        if math.isclose(lat, 0, abs_tol=1e-8) and math.isclose(lon, 0, abs_tol=1e-8):
+            return False
+        
+        # Additional checks can be added here, e.g., for other known problematic coordinates
+        
+        return True
 
     def run(self):
         self.client.on_connect = self.on_connect
@@ -102,7 +132,7 @@ def start_mqtt_subscriber():
         "rooms/+/+/access",
         "vehicles/+/+/location",
         "vehicles/+/+/ignition",
-        "vehicles/+/+/passengers",
+        "vehicles/+/+/passenger_count",
         "vehicles/+/+/tampering",
         "vehicles/+/+/payment"
     ]
