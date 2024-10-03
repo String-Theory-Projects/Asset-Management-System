@@ -40,27 +40,18 @@ jobs:
           pip install -r requirements.txt
           pip install psycopg2-binary
 
-      - name: Debug - Print installed packages
-        run: pip freeze
+      - name: Debug - List files
+        run: ls -R
 
-      - name: Debug - Check JWT configuration
+      - name: Debug - Print Django version
+        run: python -m django --version
+
+      - name: Debug - Check database connection
         run: |
-          grep -r "REST_FRAMEWORK" .
-          grep -r "SIMPLE_JWT" .
+          python -c "import psycopg2; conn = psycopg2.connect(dbname='test_db', user='postgres', password='postgres', host='localhost', port=5432); print('Database connection successful')"
 
-      - name: Run migrations without post_migrate signal
-        run: python manage.py migrate --no-post-migrate
-        env:
-          DB_NAME: test_db
-          DB_USER: postgres
-          DB_PASSWORD: postgres
-          DB_HOST: localhost
-          DB_PORT: 5432
-          SECRET_KEY: temporary-secret-key-for-testing
-        timeout-minutes: 5
-
-      - name: Run post-migrate handlers manually
-        run: python manage.py migrate --run-syncdb
+      - name: Run migrations with verbosity
+        run: python manage.py migrate --verbosity 2
         env:
           DB_NAME: test_db
           DB_USER: postgres
@@ -79,4 +70,3 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           SECRET_KEY: temporary-secret-key-for-testing
-        timeout-minutes: 10
