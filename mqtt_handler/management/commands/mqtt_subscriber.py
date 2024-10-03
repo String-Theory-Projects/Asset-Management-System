@@ -3,6 +3,7 @@ import paho.mqtt.client as mqtt
 from core.models import AssetEvent, HotelRoom, Vehicle, Asset
 from django.utils import timezone
 from django.contrib.contenttypes.models import ContentType
+import math
 
 class MQTTSubscriber(threading.Thread):
     def __init__(self, broker, port, topics):
@@ -40,11 +41,14 @@ class MQTTSubscriber(threading.Thread):
                     stored_object_id = vehicle.vehicle_number
 
                     if event_type == 'location':
-                        # Parse the GPS coordinates
                         try:
                             lat, lon = map(float, data.split(','))
-                            vehicle.update_location(lat, lon)
-                            print(f"Updated location for vehicle {object_id}: lat={lat}, lon={lon}")
+                            if self.is_valid_location(lat, lon):
+                                vehicle.update_location(lat, lon)
+                                print(f"Updated location for vehicle {object_id}: lat={lat}, lon={lon}")
+                            else:
+                                print(f"Invalid or potentially dangerous location data: lat={lat}, lon={lon}")
+                                return
                         except ValueError:
                             print(f"Invalid GPS data format: {data}")
                             return
@@ -76,6 +80,21 @@ class MQTTSubscriber(threading.Thread):
 
         except Exception as e:
             print(f"Error processing message: {str(e)}")
+
+    def is_valid_location(self, lat, lon):
+        """
+        Validate the latitude and longitude values.
+        """
+        if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+            return False
+        
+        # Check for exact 0,0 coordinates (null island)
+        if math.isclose(lat, 0, abs_tol=1e-8) and math.isclose(lon, 0, abs_tol=1e-8):
+            return False
+        
+        # Additional checks can be added here, e.g., for other known problematic coordinates
+        
+        return True
 
     def run(self):
         self.client.on_connect = self.on_connect
