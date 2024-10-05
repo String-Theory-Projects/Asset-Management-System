@@ -45,6 +45,15 @@ class MQTTSubscriber(threading.Thread):
                             lat, lon = map(float, data.split(','))
                             if self.is_valid_location(lat, lon):
                                 vehicle.update_location(lat, lon)
+                                # Create AssetEvent for valid location
+                                AssetEvent.objects.create(
+                                    asset=asset,
+                                    content_type=content_type,
+                                    object_id=stored_object_id,
+                                    event_type=event_type,
+                                    data=data,
+                                    timestamp=timezone.now()
+                                )
                                 print(f"Updated location for vehicle {object_id}: lat={lat}, lon={lon}")
                             else:
                                 print(f"Invalid or potentially dangerous location data: lat={lat}, lon={lon}")
@@ -52,6 +61,18 @@ class MQTTSubscriber(threading.Thread):
                         except ValueError:
                             print(f"Invalid GPS data format: {data}")
                             return
+
+                    else:
+                        # For non-location events, create AssetEvent as before
+                        AssetEvent.objects.create(
+                            asset=asset,
+                            content_type=content_type,
+                            object_id=stored_object_id,
+                            event_type=event_type,
+                            data=data,
+                            timestamp=timezone.now()
+                        )
+                        print(f"Successfully created AssetEvent: asset_id={asset_id}, vehicle={stored_object_id}, event_type={event_type}")
 
                 except Vehicle.DoesNotExist:
                     print(f"Vehicle with number {object_id} does not exist for asset {asset_id}.")
@@ -61,6 +82,16 @@ class MQTTSubscriber(threading.Thread):
                 try:
                     room = HotelRoom.objects.get(room_number=object_id, hotel=asset)
                     stored_object_id = room.room_number
+                     
+                     # Create AssetEvent for HotelRoom
+                    AssetEvent.objects.create(
+                        asset=asset,
+                        content_type=content_type,
+                        object_id=stored_object_id,
+                        event_type=event_type,
+                        data=data,
+                        timestamp=timezone.now()
+                    )
                 except HotelRoom.DoesNotExist:
                     print(f"Hotel room with number {object_id} does not exist for asset {asset_id}.")
                     return
@@ -68,14 +99,6 @@ class MQTTSubscriber(threading.Thread):
                 print(f"Unsupported content type: {content_type}")
                 return
 
-            AssetEvent.objects.create(
-                asset=asset,
-                content_type=content_type,
-                object_id=stored_object_id,
-                event_type=event_type,
-                data=data,
-                timestamp=timezone.now()
-            )
             print(f"Successfully created AssetEvent for asset_id={asset_id}, {content_type.model}={stored_object_id}")
 
         except Exception as e:
