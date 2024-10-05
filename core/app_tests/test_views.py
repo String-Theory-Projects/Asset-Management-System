@@ -65,7 +65,7 @@ class InitiatePaymentViewTests(TestCase):
             "name": "John Doe",
             "phonenumber": "1234567890",
             "amount": 5000,
-            "redirect_url": "http://example.com/redirect",
+            "redirect_url": "example.com/redirect",
             "title": "Test Payment",
             "description": "Payment for service",
             "asset_id": self.asset1.id,
