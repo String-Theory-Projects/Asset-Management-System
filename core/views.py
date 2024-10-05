@@ -368,8 +368,12 @@ class FlutterwaveWebhookView(APIView):
     def verify_webhook_signature(self, request):
         return settings.FLW_SECRET_HASH == request.headers.get("verif-hash")
 
+class TransactionPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class TransactionListView(APIView):
-    permission_classes = [IsAuthenticated]  # Apply authentication
     pagination_class = TransactionPagination
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['payment_status', 'payment_type', 'currency', 'is_outgoing']
@@ -378,21 +382,15 @@ class TransactionListView(APIView):
 
     def get_queryset(self):
         user = self.request.user
-
-        # Admins can see all transactions
-        if IsAdmin().has_permission(self.request, self):
+        
+        if IsAdmin():
             queryset = Transaction.objects.all()
-
-        # Managers can see transactions only for assets they manage
-        elif IsManager().has_permission(self.request, self):
-            managed_assets = Asset.objects.filter(managers=user)  # Assuming managers relation exists in Asset model
-            queryset = Transaction.objects.filter(asset_id__in=managed_assets)
-
+        elif IsManager():
+            queryset = Transaction.objects.filter(asset__manager=user)
         else:
-            # If the user is neither an admin nor a manager, they should not see anything
+            # For non-admin, non-manager users, return an empty queryset or handle as needed
             queryset = Transaction.objects.none()
 
-        # Search functionality
         search_query = self.request.query_params.get('search', None)
         if search_query:
             queryset = queryset.filter(
@@ -400,12 +398,13 @@ class TransactionListView(APIView):
                 Q(email__icontains=search_query) |
                 Q(transaction_ref__icontains=search_query)
             )
-
         return queryset
 
     def get(self, request, transaction_id=None):
         if transaction_id:
             transaction = get_object_or_404(Transaction, id=transaction_id)
+            if not IsAdmin() and (not IsManager() or transaction.asset.manager != request.user):
+                return Response({"detail": "You do not have permission to view this transaction."}, status=status.HTTP_403_FORBIDDEN)
             serializer = TransactionSerializer(transaction)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -414,6 +413,28 @@ class TransactionListView(APIView):
         if page is not None:
             serializer = TransactionSerializer(page, many=True)
             return self.get_paginated_response(serializer.data)
-
         serializer = TransactionSerializer(queryset, many=True)
         return Response(serializer.data)
+
+    def filter_queryset(self, queryset):
+        for backend in list(self.filter_backends):
+            queryset = backend().filter_queryset(self.request, queryset, self)
+        return queryset
+
+    @property
+    def paginator(self):
+        if not hasattr(self, '_paginator'):
+            if self.pagination_class is None:
+                self._paginator = None
+            else:
+                self._paginator = self.pagination_class()
+        return self._paginator
+
+    def paginate_queryset(self, queryset):
+        if self.paginator is None:
+            return None
+        return self.paginator.paginate_queryset(queryset, self.request, view=self)
+
+    def get_paginated_response(self, data):
+        assert self.paginator is not None
+        return self.paginator.get_paginated_response(data)
