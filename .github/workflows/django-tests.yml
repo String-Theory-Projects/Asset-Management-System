@@ -28,28 +28,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install psycopg2-binary
-
       - name: Debug - List files
         run: ls -R
-
       - name: Debug - Print Django version
         run: python -m django --version
-
       - name: Debug - Check database connection
         run: |
           python -c "import psycopg2; conn = psycopg2.connect(dbname='test_db', user='postgres', password='postgres', host='localhost', port=5432); print('Database connection successful')"
-
       - name: Run migrations with verbosity
         run: python manage.py migrate --verbosity 2
         env:
@@ -60,9 +54,9 @@ jobs:
           DB_PORT: 5432
           SECRET_KEY: temporary-secret-key-for-testing
         timeout-minutes: 5
-
       - name: Run tests
-        run: python manage.py test
+        run: |
+          python manage.py test --verbosity 2
         env:
           DB_NAME: test_db
           DB_USER: postgres
@@ -70,3 +64,7 @@ jobs:
           DB_HOST: localhost
           DB_PORT: 5432
           SECRET_KEY: temporary-secret-key-for-testing
+      - name: Display Python traceback on failure
+        if: failure()
+        run: |
+          python -c "import traceback; traceback.print_last()"
