@@ -71,7 +71,10 @@ class InitiatePaymentViewTests(TestCase):
             "asset_id": self.asset1.id,
         }
         
-    def test_successful_payment_initiation(self):
+    @patch('core.views.initiate_flutterwave_payment')
+    def test_successful_payment_initiation(self, mock_init):
+        mock_init.return_value = ("checkout.flutterwave.com/yippee", None)
+        mock_init.get.return_value.status_code = 200
         self.client.force_authenticate(user=self.user1)
         response = self.client.post(self.url, self.valid_payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -86,7 +89,10 @@ class InitiatePaymentViewTests(TestCase):
         # self.client.force_authenticate(user=self.user2)  # user2 doesn't have access to asset1
         # response = self.client.post(self.url, self.valid_payload, format='json')
         # self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-    def test_payment_initiation_with_different_asset_types(self):
+    @patch('core.views.initiate_flutterwave_payment')
+    def test_payment_initiation_with_different_asset_types(self, mock_init):
+        mock_init.return_value = ("checkout.flutterwave.com/yippee", None)
+        mock_init.get.return_value.status_code = 200
         self.client.force_authenticate(user=self.user1)
         
         # Test with vehicle asset
@@ -99,7 +105,10 @@ class InitiatePaymentViewTests(TestCase):
         response = self.client.post(self.url, self.valid_payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    def test_payment_initiation_with_asset_events(self):
+    @patch('core.views.initiate_flutterwave_payment')
+    def test_payment_initiation_with_asset_events(self, mock_init):
+        mock_init.return_value = ("checkout.flutterwave.com/yippee", None)
+        mock_init.get.return_value.status_code = 200
         self.client.force_authenticate(user=self.user1)
         response = self.client.post(self.url, self.valid_payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -108,13 +117,19 @@ class InitiatePaymentViewTests(TestCase):
         latest_event = AssetEvent.objects.filter(asset=self.asset1).latest('timestamp')
         self.assertEqual(latest_event.event_type, 'ignition')  # Assuming 'payment' is added to EVENT_TYPE_CHOICES
 
-    def test_payment_initiation_with_invalid_asset_id(self):
+    @patch('core.views.initiate_flutterwave_payment')
+    def test_payment_initiation_with_invalid_asset_id(self, mock_init):
+        mock_init.return_value = ("checkout.flutterwave.com/yippee", None)
+        mock_init.get.return_value.status_code = 200
         self.client.force_authenticate(user=self.user1)
         self.valid_payload['asset_id'] = 'INVALID_ID'
         response = self.client.post(self.url, self.valid_payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_payment_initiation_role_based_access(self):
+    @patch('core.views.initiate_flutterwave_payment')
+    def test_payment_initiation_role_based_access(self, mock_init):
+        mock_init.return_value = ("checkout.flutterwave.com/yippee", None)
+        mock_init.get.return_value.status_code = 200
         # Test admin role
         self.client.force_authenticate(user=self.user1)
         response = self.client.post(self.url, self.valid_payload, format='json')
@@ -125,6 +140,15 @@ class InitiatePaymentViewTests(TestCase):
         response = self.client.post(self.url, self.valid_payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
     
+    @patch('core.views.initiate_flutterwave_payment')
+    def test_payment_initiation_api_failure(self, mock_initiate_payment):
+        mock_initiate_payment.return_value = (None, "Failed to initiate payment: skill issue")
+        mock_initiate_payment.get.return_value.status_code = 400
+        
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.post(self.url, self.valid_payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', response.data)
     # Field validation tests...
     def test_invalid_email_format(self):
         self.client.force_authenticate(user=self.user1)
