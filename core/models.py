@@ -3,6 +3,8 @@ from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
+from geopy.distance import geodesic
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 from core import * #import the global variables from conf
 
@@ -112,7 +114,10 @@ class HotelRoom(models.Model):
 
 
 class Vehicle(models.Model):
-    fleet = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='fleet', limit_choices_to={'asset_type': 'vehicle'})
+    last_latitude = models.FloatField(null=True, default=0)
+    last_longitude = models.FloatField(null=True, blank=True, validators=[MinValueValidator(-90), MaxValueValidator(90)])
+    total_distance = models.FloatField(default=0.0)  # in kilometers
+    fleet = models.ForeignKey('Asset', on_delete=models.CASCADE, related_name='fleet', limit_choices_to={'asset_type': 'vehicle'})
     vehicle_number = models.CharField(max_length=255)
     brand = models.CharField(max_length=255)
     vehicle_type = models.CharField(max_length=255)
@@ -123,3 +128,21 @@ class Vehicle(models.Model):
 
     def __str__(self):
         return f"{self.vehicle_number} - {self.brand} {self.vehicle_type} in {self.fleet.asset_name}"
+
+    def update_location(self, latitude, longitude):
+        new_location = (latitude, longitude)
+        if self.last_latitude is not None and self.last_longitude is not None:
+            last_location = (self.last_latitude, self.last_longitude)
+            distance = geodesic(last_location, new_location).kilometers
+            self.total_distance += distance
+        self.last_latitude = latitude
+        self.last_longitude = longitude
+        self.save()
+
+    def get_location(self):
+        if self.last_latitude is not None and self.last_longitude is not None:
+            return {
+                'latitude': self.last_latitude,
+                'longitude': self.last_longitude
+            }
+        return None
