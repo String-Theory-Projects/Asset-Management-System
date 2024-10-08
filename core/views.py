@@ -273,41 +273,45 @@ class InitiatePaymentView(APIView):
         
 class VerifyPaymentView(APIView):
     permission_classes = [AllowAny]
+
     def get(self, request):
         tx_ref = request.GET.get('tx_ref')
         transaction_id = request.GET.get('transaction_id')
+        status_param = request.GET.get('status')
 
-        if not all([tx_ref, transaction_id]):
-            logger.error(f"Missing required parameters: tx_ref={tx_ref}, transaction_id={transaction_id}")
+        if not all([tx_ref, status_param]):
+            logger.error(f"Missing required parameters: tx_ref={tx_ref}, status={status_param}")
             return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Verify the transaction status
-            transaction_data, error = verify_flutterwave_transaction(transaction_id)
-
-            if error:
-                logger.error(f"Error verifying transaction: {error}")
-                return Response({"error": "Failed to verify transaction"}, status=status.HTTP_400_BAD_REQUEST)
-
-            if not transaction_data:
-                logger.error("No transaction data received")
-                return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
-
-            flw_status = transaction_data.get('status', '').lower()
-
-            # Use select_for_update to lock the row and ensure idempotency
             with transaction.atomic():
                 db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
                 
-                if db_transaction.is_verified:
+                if db_transaction.is_verified and db_transaction.payment_status == status_param: #transaction already confirmed and update is same status
                     logger.info(f"Transaction {tx_ref} already verified")
                     return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
 
-                self.update_transaction(db_transaction, flw_status)
-                if flw_status == 'successful':
+                if status_param.lower() == 'failed':
+                    self.update_transaction(db_transaction, 'failed')
+                    logger.info(f"Transaction {tx_ref} marked as failed")
+                    return Response({"message": "Payment status updated to failed"}, status=status.HTTP_400_BAD_REQUEST)
+
+                # Verify the transaction status with Flutterwave
+                transaction_data, error = verify_flutterwave_transaction(transaction_id)
+
+                if error:
+                    logger.error(f"Error verifying transaction: {error}")
+                    return Response({"error": "Failed to verify transaction"}, status=status.HTTP_400_BAD_REQUEST)
+
+                if not transaction_data:
+                    logger.error("No transaction data received")
+                    return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
+                transaction_status = 'completed' if transaction_data.get('status') == 'successful' else status_param #convert transaction status to completed to fit database model
+                self.update_transaction(db_transaction, transaction_status)
+                if status_param == 'successful':
                     return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
                 else:
-                    return Response({"message": f"Payment status updated to {flw_status}"}, status=status.HTTP_200_OK)
+                    return Response({"message": f"Payment status updated to {status_param}"}, status=status.HTTP_200_OK)
 
         except Transaction.DoesNotExist:
             logger.error(f"Transaction {tx_ref} not found in database")
@@ -316,15 +320,16 @@ class VerifyPaymentView(APIView):
             logger.error(f"Error processing transaction {tx_ref}: {str(e)}")
             return Response({"error": "Error processing payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def update_transaction(self, transaction, status):
-        transaction.payment_status = status
+    def update_transaction(self, transaction, status_param):
+
+        transaction.payment_status = status_param
         transaction.is_verified = True
 
         transaction.save()
 
         # Trigger async tasks
-        send_user_sms() # NOTE: these are currently unimplemented
-        send_user_email()
+        # send_user_sms.delay() # NOTE: these are currently unimplemented
+        # send_user_email.delay()
 
         logger.info(f"Transaction {transaction.transaction_ref} updated successfully")
 
@@ -363,8 +368,12 @@ class FlutterwaveWebhookView(APIView):
     def verify_webhook_signature(self, request):
         return settings.FLW_SECRET_HASH == request.headers.get("verif-hash")
 
+class TransactionPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 class TransactionListView(APIView):
-    permission_classes = [IsAuthenticated]  # Apply authentication
     pagination_class = TransactionPagination
     filter_backends = [DjangoFilterBackend, OrderingFilter]
     filterset_fields = ['payment_status', 'payment_type', 'currency', 'is_outgoing']
@@ -373,21 +382,15 @@ class TransactionListView(APIView):
 
     def get_queryset(self):
         user = self.request.user
-
-        # Admins can see all transactions
-        if IsAdmin().has_permission(self.request, self):
+        
+        if IsAdmin():
             queryset = Transaction.objects.all()
-
-        # Managers can see transactions only for assets they manage
-        elif IsManager().has_permission(self.request, self):
-            managed_assets = Asset.objects.filter(managers=user)  # Assuming managers relation exists in Asset model
-            queryset = Transaction.objects.filter(asset_id__in=managed_assets)
-
+        elif IsManager():
+            queryset = Transaction.objects.filter(asset__manager=user)
         else:
-            # If the user is neither an admin nor a manager, they should not see anything
+            # For non-admin, non-manager users, return an empty queryset or handle as needed
             queryset = Transaction.objects.none()
 
-        # Search functionality
         search_query = self.request.query_params.get('search', None)
         if search_query:
             queryset = queryset.filter(
@@ -395,12 +398,13 @@ class TransactionListView(APIView):
                 Q(email__icontains=search_query) |
                 Q(transaction_ref__icontains=search_query)
             )
-
         return queryset
 
     def get(self, request, transaction_id=None):
         if transaction_id:
             transaction = get_object_or_404(Transaction, id=transaction_id)
+            if not IsAdmin() and (not IsManager() or transaction.asset.manager != request.user):
+                return Response({"detail": "You do not have permission to view this transaction."}, status=status.HTTP_403_FORBIDDEN)
             serializer = TransactionSerializer(transaction)
             return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -409,6 +413,28 @@ class TransactionListView(APIView):
         if page is not None:
             serializer = TransactionSerializer(page, many=True)
             return self.get_paginated_response(serializer.data)
-
         serializer = TransactionSerializer(queryset, many=True)
         return Response(serializer.data)
+
+    def filter_queryset(self, queryset):
+        for backend in list(self.filter_backends):
+            queryset = backend().filter_queryset(self.request, queryset, self)
+        return queryset
+
+    @property
+    def paginator(self):
+        if not hasattr(self, '_paginator'):
+            if self.pagination_class is None:
+                self._paginator = None
+            else:
+                self._paginator = self.pagination_class()
+        return self._paginator
+
+    def paginate_queryset(self, queryset):
+        if self.paginator is None:
+            return None
+        return self.paginator.paginate_queryset(queryset, self.request, view=self)
+
+    def get_paginated_response(self, data):
+        assert self.paginator is not None
+        return self.paginator.get_paginated_response(data)

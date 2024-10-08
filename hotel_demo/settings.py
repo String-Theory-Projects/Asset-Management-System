@@ -55,7 +55,7 @@ CORS_ALLOW_CREDENTIALS = True
 INSTALLED_APPS = [
     'core',
     'assets',
-    'mqtt_handler',
+    # 'mqtt_handler',
     'corsheaders',
     'whitenoise.runserver_nostatic',
     'django.contrib.admin',
@@ -185,7 +185,8 @@ STATICFILES_DIRS = [
 ]
 
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-   
+
+SILENCED_SYSTEM_CHECKS = ['staticfiles.W004']
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
