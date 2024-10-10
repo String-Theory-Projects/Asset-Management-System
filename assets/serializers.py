@@ -3,6 +3,7 @@ from core.models import Asset
 from django.contrib.auth import get_user_model
 from core.models import HotelRoom, Vehicle, Role
 
+User = get_user_model()
 
 class AssetSerializer(serializers.ModelSerializer):
     asset_number = serializers.SerializerMethodField()
@@ -10,9 +11,9 @@ class AssetSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Asset
-        fields = "__all__"
-        read_only_fields = ['id', 'asset_number']
-        # fields = ['id', 'asset_type', 'asset_name', 'location', 'created_at', 'total_revenue', 'details', 'account_number', 'bank', 'user_role']
+        # fields = "__all__"
+        # read_only_fields = ['id', 'asset_number']
+        fields = ['id', 'asset_type', 'asset_name', 'location', 'created_at', 'total_revenue', 'details', 'account_number', 'bank', 'user_role']
 
     def get_user_role(self, obj):
         request = self.context.get('request')
@@ -21,18 +22,6 @@ class AssetSerializer(serializers.ModelSerializer):
             return role.role if role else None
         return None
 
-# Genearating asset number
-    def get_asset_number(self, obj):
-        
-        user_id = obj.roles.first().user.id
-        # Get total count of user assets till this point
-        user_assets = Asset.objects.filter(roles__user__id=user_id).order_by('created_at')
-        # Getting the asset ordinal number from a list of assets
-        asset_number = list(user_assets).index(obj) + 1
-        formatted_user_id = f"{user_id:05}" # Limiting the user id to five digits
-        formatted_asset_number = f"{asset_number:03}" # Limiting the asset_number to three digits
-
-        return f"TP{formatted_user_id}{formatted_asset_number}"
     
     def create(self, validated_data):
         # If you have a many-to-many field, exclude it from the creation of the object

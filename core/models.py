@@ -64,6 +64,20 @@ class Asset(models.Model):
     account_number = models.CharField(max_length=10)
     bank = models.CharField(max_length=20)
 
+    def save(self, *args, **kwargs):
+        if not self.custom_asset_number:
+            self.custom_asset_number = self.generate_custom_asset_number()
+        super().save(*args, **kwargs)
+
+    # Generating asset number
+    def generate_custom_asset_number(self):
+
+        formatted_user_id = f"{self.user.id:05}" # Limiting the user id to five digits
+        asset_count = Asset.objects.filter(user=self.user).count() + 1
+        formatted_asset_number = f"{asset_count:03}" # Limiting the asset_number to three digits
+
+        return f"TP{formatted_user_id}{formatted_asset_number}"
+
     def __str__(self):
         return self.asset_name
 
