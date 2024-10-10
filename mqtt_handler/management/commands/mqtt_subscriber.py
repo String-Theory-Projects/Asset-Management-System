@@ -24,14 +24,14 @@ class MQTTSubscriber(threading.Thread):
         print(f"Received message on {message.topic}: {data}")
 
         try:
-            asset_id, object_id, event_type, content_type = extract_event_info(message.topic)
-            print(f"Extracted info: asset_id={asset_id}, object_id={object_id}, event_type={event_type}")
+            asset_number, object_id, event_type, content_type = extract_event_info(message.topic)
+            print(f"Extracted info: asset_number={asset_number}, object_id={object_id}, event_type={event_type}")
 
             # Check if the Asset exists
             try:
-                asset = Asset.objects.get(id=asset_id)
+                asset = Asset.objects.get(asset_number=asset_number)
             except Asset.DoesNotExist:
-                print(f"Asset with ID {asset_id} does not exist.")
+                print(f"Asset with number {asset_number} does not exist.")
                 return
 
             # Determine if it's a vehicle or hotel room based on the content_type
@@ -72,10 +72,10 @@ class MQTTSubscriber(threading.Thread):
                             data=data,
                             timestamp=timezone.now()
                         )
-                        print(f"Successfully created AssetEvent: asset_id={asset_id}, vehicle={stored_object_id}, event_type={event_type}")
+                        print(f"Successfully created AssetEvent: asset_number={asset_number}, vehicle={stored_object_id}, event_type={event_type}")
 
                 except Vehicle.DoesNotExist:
-                    print(f"Vehicle with number {object_id} does not exist for asset {asset_id}.")
+                    print(f"Vehicle with number {object_id} does not exist for asset {asset_number}.")
                     return
 
             elif content_type == ContentType.objects.get_for_model(HotelRoom):
@@ -93,13 +93,13 @@ class MQTTSubscriber(threading.Thread):
                         timestamp=timezone.now()
                     )
                 except HotelRoom.DoesNotExist:
-                    print(f"Hotel room with number {object_id} does not exist for asset {asset_id}.")
+                    print(f"Hotel room with number {object_id} does not exist for asset {asset_number}.")
                     return
             else:
                 print(f"Unsupported content type: {content_type}")
                 return
 
-            print(f"Successfully created AssetEvent for asset_id={asset_id}, {content_type.model}={stored_object_id}")
+            print(f"Successfully created AssetEvent for asset_number={asset_number}, {content_type.model}={stored_object_id}")
 
         except Exception as e:
             print(f"Error processing message: {str(e)}")
@@ -128,13 +128,13 @@ class MQTTSubscriber(threading.Thread):
 
 def extract_event_info(topic):
     """
-    Extract asset_id, object_id, event_type, and content_type from the topic string.
-    Example topic: "vehicles/AMS11120/999/passengers"
+    Extract asset_number, object_id, event_type, and content_type from the topic string.
+    Example topic: "vehicles/TAS-0001-001/001/passengers"
     """
     topic_parts = topic.split('/')
     asset_type = topic_parts[0]  # 'vehicles'
-    asset_id = topic_parts[1]    # 'AMS11120'
-    object_id = topic_parts[2]   # '999'
+    asset_number = topic_parts[1]    # 'TAS-0001-001'
+    object_id = topic_parts[2]   # '001'
     event_type = topic_parts[3]  # 'passengers'
 
     # Determine content type based on asset type
@@ -145,7 +145,7 @@ def extract_event_info(topic):
     else:
         raise ValueError("Unsupported asset type")
 
-    return asset_id, object_id, event_type, content_type
+    return asset_number, object_id, event_type, content_type
 
 
 def start_mqtt_subscriber():

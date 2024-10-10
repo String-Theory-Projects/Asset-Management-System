@@ -43,31 +43,36 @@ logger.setLevel(logging.INFO)
 # ---------- AUTH VIEWS ----------
 
 class RegisterView(APIView):
-    authentication_classes = []  # Disable authentication for this view
-    permission_classes = []  # Disable permissions for this view
+    authentication_classes = []
+    permission_classes = []
     
     def post(self, request, *args, **kwargs):
+        logger.info(f"Received registration request: {request.data}")
         serializer = UserSerializer(data=request.data)
         
         if serializer.is_valid():
             try:
                 user = serializer.save()
+                logger.info(f"User created successfully: {user.email}")
                 return Response({
                     'message': 'User created successfully.',
                     'user': UserSerializer(user).data
                 }, status=status.HTTP_201_CREATED)
 
-            except IntegrityError:
-                return Response({'error': 'A user with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+            except IntegrityError as e:
+                logger.error(f"IntegrityError during user creation: {str(e)}")
+                return Response({'error': f'A user with this email already exists. Details: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
             except ValidationError as e:
-                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                logger.error(f"ValidationError during user creation: {str(e)}")
+                return Response({'error': f'Validation error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
             except Exception as e:
-                return Response({'error': 'An unexpected error occurred. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                logger.error(f"Unexpected error during user creation: {str(e)}", exc_info=True)
+                return Response({'error': f'An unexpected error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            # Customize error messages
+            logger.error(f"Serializer validation failed: {serializer.errors}")
             error_messages = {}
             for field, errors in serializer.errors.items():
-                error_messages[field] = errors[0]  # Take the first error message for each field
+                error_messages[field] = errors[0]
             return Response({'errors': error_messages}, status=status.HTTP_400_BAD_REQUEST)
 
 class ProfileView(APIView):
@@ -207,10 +212,10 @@ class InitiatePaymentView(APIView):
             redirect_url = validate_field(request.data, "redirect_url", [str])
             title = validate_field(request.data, "title", [str])
             description = validate_field(request.data, "description", [str])
-            asset_id = validate_field(request.data, "asset_id", [int])
+            asset_number = validate_field(request.data, "asset_number", [str])
+            sub_asset_number = validate_field(request.data, "sub_asset_number", [str])
             
             # Optional fields
-            sub_asset_id = validate_field(request.data, "sub_asset_id", [int], required=False)
             currency = validate_field(request.data, "currency", [str], required=False, default="NGN")
             is_outgoing = validate_field(request.data, "is_outgoing", [bool], required=False, default=False)
 
@@ -246,10 +251,10 @@ class InitiatePaymentView(APIView):
         if payment_link:
             try:
                 with transaction.atomic(): #start a transaction to ensure that the database is consistent
-                    asset = Asset.objects.get(id=asset_id)
+                    asset = Asset.objects.get(asset_number=asset_number)
                     transaction_obj = Transaction.objects.create(
                         asset=asset,
-                        sub_asset_id=sub_asset_id,
+                        sub_asset_number=sub_asset_number,
                         payment_status='pending',
                         payment_type='card',  # TODO: confirm if card payment, adjust if needed
                         amount=amount,
