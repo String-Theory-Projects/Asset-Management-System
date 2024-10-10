@@ -1,17 +1,26 @@
 from rest_framework import serializers
 from core.models import Asset
 from django.contrib.auth import get_user_model
-from core.models import HotelRoom, Vehicle, Role
+from core.models import HotelRoom, Vehicle, Role, Transaction
 
 
 User = get_user_model()
+
+class TransactionHistorySerializer(serializers.ModelSerializer):
+    date_time = serializers.DateTimeField(source='timestamp', format="%Y-%m-%d %H:%M:%S")
+
+    class Meta:
+        model = Transaction
+        fields = ['name', 'amount', 'sub_asset_number', 'payment_status', 'date_time']
+        
 
 class AssetSerializer(serializers.ModelSerializer):
     user_role = serializers.SerializerMethodField()
 
     class Meta:
         model = Asset
-        fields = ['id', 'asset_type', 'asset_name', 'location', 'created_at', 'total_revenue', 'details', 'account_number', 'bank', 'user_role']
+        fields = ['asset_number', 'asset_type', 'asset_name', 'location', 'created_at', 'total_revenue', 'details', 'account_number', 'bank', 'user_role']
+        read_only_fields = ['asset_number', 'created_at', 'total_revenue', 'user_role']
 
     def get_user_role(self, obj):
         request = self.context.get('request')
@@ -19,6 +28,19 @@ class AssetSerializer(serializers.ModelSerializer):
             role = Role.objects.filter(user=request.user, asset=obj).first()
             return role.role if role else None
         return None
+
+    def create(self, validated_data):
+        user = validated_data.pop('user', None)
+        asset = Asset(**validated_data)
+        asset.save(user=user)
+        return asset
+
+    def update(self, instance, validated_data):
+        user = validated_data.pop('user', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save(user=user)
+        return instance
 
 
 class AssetUserSerializer(serializers.ModelSerializer):
@@ -34,13 +56,13 @@ class AssetUserSerializer(serializers.ModelSerializer):
         return f"{obj.first_name} {obj.last_name}".strip() or obj.username
 
     def get_role(self, obj):
-        asset_id = self.context.get('asset_id')
-        role = obj.roles.filter(asset_id=asset_id).first()
+        asset_number = self.context.get('asset_number')
+        role = obj.roles.filter(asset__asset_number=asset_number).first()
         return role.role if role else None
 
     def get_role_association_timestamp(self, obj):
-        asset_id = self.context.get('asset_id')
-        role = obj.roles.filter(asset_id=asset_id).first()
+        asset_number = self.context.get('asset_number')
+        role = obj.roles.filter(asset__asset_number=asset_number).first()
         return role.created_at if role else None
 
 
@@ -53,6 +75,7 @@ class DisassociateUserSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
 
+
 class HotelRoomSerializer(serializers.ModelSerializer):
     class Meta:
         model = HotelRoom
@@ -61,6 +84,7 @@ class HotelRoomSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'room_number': {'required': True}
         }
+
 
 class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
