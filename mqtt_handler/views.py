@@ -46,6 +46,8 @@ class ControlAssetView(APIView):
             # Validate the sub-asset (room)
             try:
                 room = HotelRoom.objects.get(room_number=sub_asset_id, hotel=asset)
+                if room.status:
+                    return Response({'error': 'Cannot control an active hotel room. Please check out the guest first.'}, status=status.HTTP_400_BAD_REQUEST)
             except HotelRoom.DoesNotExist:
                 return Response({'error': 'Room not found for the specified hotel.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -60,6 +62,8 @@ class ControlAssetView(APIView):
             # Validate the sub-asset (vehicle)
             try:
                 vehicle = Vehicle.objects.get(vehicle_number=sub_asset_id, fleet=asset)
+                if vehicle.status:
+                    return Response({'error': 'Cannot control an active vehicle. Please ensure the vehicle is parked and not in use.'}, status=status.HTTP_400_BAD_REQUEST)
             except Vehicle.DoesNotExist:
                 return Response({'error': 'Vehicle not found for the specified fleet.'}, status=status.HTTP_404_NOT_FOUND)
 
