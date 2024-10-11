@@ -2,18 +2,29 @@ import paho.mqtt.client as mqtt
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.models import Asset, AssetEvent, HotelRoom, Vehicle, Role
+from core.models import Asset, AssetEvent, HotelRoom, Vehicle
 from django.utils import timezone
 from datetime import timedelta
 from django.contrib.contenttypes.models import ContentType
 from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 
 # Configure the MQTT client
 MQTT_BROKER = 'broker.emqx.io'  # Replace with your MQTT broker address
 MQTT_PORT = 1883  # Default MQTT port
 
+User = get_user_model()
+
+def get_system_user_token():
+    system_user = User.objects.get(username='info@trykey.com')
+    refresh = RefreshToken.for_user(system_user)
+    return str(refresh.access_token)
+
 class ControlAssetView(APIView):
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def __init__(self, **kwargs):
@@ -23,7 +34,7 @@ class ControlAssetView(APIView):
 
     def post(self, request, *args, **kwargs):
         asset_number = kwargs.get('asset_number')
-        sub_asset_id = kwargs.get('sub_asset_id')  # Retrieve sub_asset_id from URL
+        sub_asset_id = kwargs.get('sub_asset_id')
         action_type = request.data.get('action_type')
         data = request.data.get('data')
 
@@ -35,8 +46,8 @@ class ControlAssetView(APIView):
         except Asset.DoesNotExist:
             return Response({'error': 'Asset not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Ensure the user is an admin for the specified asset
-        if not request.user.roles.filter(asset=asset, role='admin').exists():
+        # Ensure the user is an admin for the specified asset or system user
+        if not (request.user.is_superuser or request.user.username == 'info@trykey.com' or request.user.roles.filter(asset=asset, role='admin').exists()):
             return Response({'error': 'You do not have permission to control this asset.'}, status=status.HTTP_403_FORBIDDEN)
 
         topic = None
