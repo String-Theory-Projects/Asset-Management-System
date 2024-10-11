@@ -10,6 +10,7 @@ from rest_framework.permissions import OR, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.views import APIView
+from django.db.models import Count, Case, When, Value, IntegerField
 
 from .serializers import AssetSerializer, AssociateUserSerializer, HotelRoomSerializer, VehicleSerializer, DisassociateUserSerializer, AssetUserSerializer, TransactionHistorySerializer
 from core.models import Asset, Role, User, HotelRoom, Vehicle, Transaction
@@ -33,7 +34,16 @@ class AssetViewSet(ModelViewSet):
         cache_key = f'user_assets_{user.id}'
         assets = cache.get(cache_key)
         if not assets:
-            assets = Asset.objects.filter(roles__user=user)
+            assets = Asset.objects.filter(roles__user=user).annotate(
+                sub_asset_count=Count(
+                    Case(
+                        When(asset_type='hotel', then='rooms'),
+                        When(asset_type='vehicle', then='fleet'),
+                        default=Value(None),
+                        output_field=IntegerField()
+                    )
+                )
+            )
             cache.set(cache_key, assets, 60 * 5)  # Cache for 5 minutes
         
         logger.debug(f"Queryset count: {assets.count()}")
