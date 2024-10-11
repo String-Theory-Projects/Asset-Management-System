@@ -1,8 +1,8 @@
 from rest_framework import serializers
-from core.models import Asset
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
-from core.models import HotelRoom, Vehicle, Role, Transaction, AssetEvent
+from core.models import HotelRoom, Vehicle, Role, Transaction, AssetEvent, Asset
+from django.db.models import Count
 
 
 User = get_user_model()
@@ -17,11 +17,12 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
 
 class AssetSerializer(serializers.ModelSerializer):
     user_role = serializers.SerializerMethodField()
+    sub_asset_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Asset
-        fields = ['asset_number', 'asset_type', 'asset_name', 'location', 'created_at', 'total_revenue', 'details', 'account_number', 'bank', 'user_role']
-        read_only_fields = ['asset_number', 'created_at', 'total_revenue', 'user_role']
+        fields = ['asset_number', 'asset_type', 'asset_name', 'location', 'created_at', 'total_revenue', 'details', 'account_number', 'bank', 'user_role', 'sub_asset_count']
+        read_only_fields = ['asset_number', 'created_at', 'total_revenue', 'user_role', 'sub_asset_count']
 
     def get_user_role(self, obj):
         request = self.context.get('request')
@@ -29,6 +30,13 @@ class AssetSerializer(serializers.ModelSerializer):
             role = Role.objects.filter(user=request.user, asset=obj).first()
             return role.role if role else None
         return None
+
+    def get_sub_asset_count(self, obj):
+        if obj.asset_type == 'hotel':
+            return obj.rooms.count()
+        elif obj.asset_type == 'vehicle':
+            return obj.fleet.count()
+        return 0
 
     def create(self, validated_data):
         user = validated_data.pop('user', None)
@@ -42,7 +50,6 @@ class AssetSerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save(user=user)
         return instance
-
 
 class AssetUserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
