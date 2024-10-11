@@ -83,7 +83,7 @@ class AssetEvent(models.Model):
 
     # Generic Foreign Key fields
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.PositiveIntegerField()
+    object_id = models.CharField(max_length=10)
     sub_asset = GenericForeignKey('content_type', 'object_id')
 
     class Meta:
@@ -128,7 +128,7 @@ class Vehicle(models.Model):
     last_latitude = models.FloatField(null=True, default=0)
     last_longitude = models.FloatField(null=True, blank=True, validators=[MinValueValidator(-90), MaxValueValidator(90)])
     total_distance = models.FloatField(default=0.0)  # in kilometers
-    vehicle_number = models.CharField(max_length=255)
+    vehicle_number = models.CharField(max_length=10)
     brand = models.CharField(max_length=255)
     vehicle_type = models.CharField(max_length=255)
     status = models.BooleanField(default=False)
