@@ -14,7 +14,6 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
         
 
 class AssetSerializer(serializers.ModelSerializer):
-    asset_number = serializers.SerializerMethodField()
     user_role = serializers.SerializerMethodField()
 
     class Meta:
@@ -73,7 +72,6 @@ class AssociateUserSerializer(serializers.Serializer):
 
 class DisassociateUserSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
-
 
 
 class HotelRoomSerializer(serializers.ModelSerializer):
