@@ -1,19 +1,15 @@
 import json
-from decimal import Decimal
 import logging
 import requests
 
 from django.db import transaction, IntegrityError
-from django.db.models import Q
-from django.http import JsonResponse, HttpResponse
-from django.core.cache import cache
-from django.core.serializers.json import DjangoJSONEncoder
+from django.db.models import Q, F
+from django.http import HttpResponse
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from django.conf import settings
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
-from django.core.validators import validate_email
 
 from rest_framework import status
 from rest_framework.response import Response
@@ -25,6 +21,9 @@ from rest_framework.filters import OrderingFilter
 from rave_python import Rave
 from rave_python.rave_misc import generateTransactionReference 
 
+from django.utils import timezone
+from datetime import timedelta
+import math
 
 from utils.helpers import *
 from utils.payment import initiate_flutterwave_payment, verify_flutterwave_transaction
@@ -34,40 +33,48 @@ from core import *
 from .serializers import UserSerializer, TransactionSerializer
 from .models import User, Asset, HotelRoom, Transaction, Vehicle
 from .permissions import IsAdmin,IsManager
+from .tasks import schedule_sub_asset_expiry
+from mqtt_handler.views import get_system_user_token 
 
 
 User = get_user_model()
+DOMAIN = 'http://localhost:8000'
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 # ---------- AUTH VIEWS ----------
 
 class RegisterView(APIView):
-    authentication_classes = []  # Disable authentication for this view
-    permission_classes = []  # Disable permissions for this view
+    authentication_classes = []
+    permission_classes = []
     
     def post(self, request, *args, **kwargs):
+        logger.info(f"Received registration request: {request.data}")
         serializer = UserSerializer(data=request.data)
         
         if serializer.is_valid():
             try:
                 user = serializer.save()
+                logger.info(f"User created successfully: {user.email}")
                 return Response({
                     'message': 'User created successfully.',
                     'user': UserSerializer(user).data
                 }, status=status.HTTP_201_CREATED)
 
-            except IntegrityError:
-                return Response({'error': 'A user with this email already exists.'}, status=status.HTTP_400_BAD_REQUEST)
+            except IntegrityError as e:
+                logger.error(f"IntegrityError during user creation: {str(e)}")
+                return Response({'error': f'A user with this email already exists. Details: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
             except ValidationError as e:
-                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                logger.error(f"ValidationError during user creation: {str(e)}")
+                return Response({'error': f'Validation error: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
             except Exception as e:
-                return Response({'error': 'An unexpected error occurred. Please try again later.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                logger.error(f"Unexpected error during user creation: {str(e)}", exc_info=True)
+                return Response({'error': f'An unexpected error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
-            # Customize error messages
+            logger.error(f"Serializer validation failed: {serializer.errors}")
             error_messages = {}
             for field, errors in serializer.errors.items():
-                error_messages[field] = errors[0]  # Take the first error message for each field
+                error_messages[field] = errors[0]
             return Response({'errors': error_messages}, status=status.HTTP_400_BAD_REQUEST)
 
 class ProfileView(APIView):
@@ -207,10 +214,10 @@ class InitiatePaymentView(APIView):
             redirect_url = validate_field(request.data, "redirect_url", [str])
             title = validate_field(request.data, "title", [str])
             description = validate_field(request.data, "description", [str])
-            asset_id = validate_field(request.data, "asset_id", [int])
+            asset_number = validate_field(request.data, "asset_number", [str])
+            sub_asset_number = validate_field(request.data, "sub_asset_number", [str])
             
             # Optional fields
-            sub_asset_id = validate_field(request.data, "sub_asset_id", [int], required=False)
             currency = validate_field(request.data, "currency", [str], required=False, default="NGN")
             is_outgoing = validate_field(request.data, "is_outgoing", [bool], required=False, default=False)
 
@@ -246,10 +253,10 @@ class InitiatePaymentView(APIView):
         if payment_link:
             try:
                 with transaction.atomic(): #start a transaction to ensure that the database is consistent
-                    asset = Asset.objects.get(id=asset_id)
+                    asset = Asset.objects.get(asset_number=asset_number)
                     transaction_obj = Transaction.objects.create(
                         asset=asset,
-                        sub_asset_id=sub_asset_id,
+                        sub_asset_number=sub_asset_number,
                         payment_status='pending',
                         payment_type='card',  # TODO: confirm if card payment, adjust if needed
                         amount=amount,
@@ -278,6 +285,9 @@ class VerifyPaymentView(APIView):
         tx_ref = request.GET.get('tx_ref')
         transaction_id = request.GET.get('transaction_id')
         status_param = request.GET.get('status')
+        # PURELY FOR TESTING process_transaction()
+        # db_transaction = Transaction.objects.get(transaction_ref=tx_ref)
+        # self.process_transaction(db_transaction, 'completed')
 
         if not all([tx_ref, status_param]):
             logger.error(f"Missing required parameters: tx_ref={tx_ref}, status={status_param}")
@@ -287,12 +297,12 @@ class VerifyPaymentView(APIView):
             with transaction.atomic():
                 db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
                 
-                if db_transaction.is_verified and db_transaction.payment_status == status_param: #transaction already confirmed and update is same status
+                if db_transaction.is_verified and db_transaction.payment_status == status_param:
                     logger.info(f"Transaction {tx_ref} already verified")
                     return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
 
                 if status_param.lower() == 'failed':
-                    self.update_transaction(db_transaction, 'failed')
+                    self.process_transaction(db_transaction, 'failed')
                     logger.info(f"Transaction {tx_ref} marked as failed")
                     return Response({"message": "Payment status updated to failed"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -306,8 +316,10 @@ class VerifyPaymentView(APIView):
                 if not transaction_data:
                     logger.error("No transaction data received")
                     return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
-                transaction_status = 'completed' if transaction_data.get('status') == 'successful' else status_param #convert transaction status to completed to fit database model
-                self.update_transaction(db_transaction, transaction_status)
+
+                transaction_status = 'completed' if transaction_data.get('status') == 'successful' else status_param
+                self.process_transaction(db_transaction, transaction_status)
+
                 if status_param == 'successful':
                     return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
                 else:
@@ -320,18 +332,108 @@ class VerifyPaymentView(APIView):
             logger.error(f"Error processing transaction {tx_ref}: {str(e)}")
             return Response({"error": "Error processing payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def update_transaction(self, transaction, status_param):
-
-        transaction.payment_status = status_param
-        transaction.is_verified = True
-
-        transaction.save()
+    def process_transaction(self, transaction, status_param):
+        self.update_transaction(transaction, status_param)
+        
+        if status_param == 'completed' and not transaction.is_outgoing:
+            self.update_asset_revenue(transaction)
+            self.update_sub_asset(transaction)
 
         # Trigger async tasks
         # send_user_sms.delay() # NOTE: these are currently unimplemented
         # send_user_email.delay()
 
+    def update_transaction(self, transaction, status_param):
+        transaction.payment_status = status_param
+        transaction.is_verified = True
+        transaction.save()
         logger.info(f"Transaction {transaction.transaction_ref} updated successfully")
+
+    def update_asset_revenue(self, transaction):
+        Asset.objects.filter(asset_number=transaction.asset.asset_number).update(
+            total_revenue=F('total_revenue') + transaction.amount
+        )
+        logger.info(f"Updated total revenue for asset {transaction.asset.asset_number}")
+
+    def update_sub_asset(self, transaction):
+        asset = transaction.asset
+        sub_asset_number = transaction.sub_asset_number
+        current_time = timezone.now()
+
+        if asset.asset_type == 'hotel':
+            room = HotelRoom.objects.get(hotel=asset, room_number=sub_asset_number)
+            duration_days = math.ceil(float(transaction.amount) / float(room.price))
+
+            if room.status and room.expiry_timestamp > current_time:
+                # Room is already active, extend the expiry
+                new_expiry = room.expiry_timestamp + timedelta(minutes=duration_days)
+            else:
+                # Room is not active or has expired, set new activation and expiry
+                room.activation_timestamp = current_time
+                new_expiry = current_time + timedelta(minutes=duration_days)
+
+            self.send_control_request(asset.asset_number, sub_asset_number, "access", "unlock")
+            
+            room.status = True
+            room.expiry_timestamp = new_expiry
+            room.save()
+            
+            # Cancel any existing expiry task and schedule a new one
+            schedule_sub_asset_expiry.apply_async(
+                args=[asset.asset_number, sub_asset_number, "access", "lock"],
+                eta=new_expiry
+            )
+            
+            logger.info(f"Updated HotelRoom {room.room_number} status and timestamps. New expiry: {new_expiry}")
+
+        elif asset.asset_type == 'vehicle':
+            vehicle = Vehicle.objects.get(fleet=asset, vehicle_number=sub_asset_number)
+            duration_days = 1  # Assuming 1 day per payment, adjust as needed
+
+            if vehicle.status and vehicle.expiry_timestamp > current_time:
+                # Vehicle is already active, extend the expiry
+                new_expiry = vehicle.expiry_timestamp + timedelta(days=duration_days)
+            else:
+                # Vehicle is not active or has expired, set new activation and expiry
+                vehicle.activation_timestamp = current_time
+                new_expiry = current_time + timedelta(days=duration_days)
+
+            self.send_control_request(asset.asset_number, sub_asset_number, "ignition", "turn_on")
+            
+            vehicle.status = True
+            vehicle.expiry_timestamp = new_expiry
+            vehicle.save()
+            
+            # Cancel any existing expiry task and schedule a new one
+            schedule_sub_asset_expiry.apply_async(
+                args=[asset.asset_number, sub_asset_number, "ignition", "turn_off"],
+                eta=new_expiry
+            )
+            
+            logger.info(f"Updated Vehicle {vehicle.vehicle_number} status and timestamps. New expiry: {new_expiry}")
+
+        else:
+            logger.warning(f"Unsupported asset type: {asset.asset_type}")
+
+    def send_control_request(self, asset_number, sub_asset_number, action_type, data):
+        url = f'{DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
+        headers = {
+            'Authorization': f'Bearer {get_system_user_token()}'
+        }
+        payload = {
+            'action_type': action_type,
+            'data': data
+        }
+        try:
+            response = requests.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            logger.info(f"Control request sent successfully: {url}")
+        except requests.RequestException as e:
+            logger.error(f"Failed to send control request: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"Response status code: {e.response.status_code}")
+                logger.error(f"Response content: {e.response.content}")
+
 
 class FlutterwaveWebhookView(APIView):
 

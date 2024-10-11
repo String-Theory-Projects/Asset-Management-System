@@ -25,8 +25,8 @@ class User(AbstractUser):
 
 
 class Transaction(models.Model):
-    asset = models.ForeignKey('Asset', related_name='transactions', on_delete=models.CASCADE)
-    sub_asset_id = models.IntegerField(null=True, blank=True)
+    asset = models.ForeignKey('Asset', to_field='asset_number', related_name='transactions', on_delete=models.CASCADE)
+    sub_asset_number = models.CharField(max_length=10)
     payment_status = models.CharField(max_length=10, choices=PAYMENT_STATUS_CHOICES)
     payment_type = models.CharField(max_length=100, choices=[('card','Card'), ('transfer', 'Transfer'),('mobile_money', 'Mobile_money')])
     amount = models.DecimalField(max_digits=15, decimal_places=2)
@@ -52,9 +52,8 @@ class Transaction(models.Model):
         ]
 
 
-
 class Asset(models.Model):
-    id = models.CharField(max_length=50, primary_key=True)
+    asset_number = models.CharField(max_length=255, unique=True, editable=False)
     asset_type = models.CharField(max_length=10, choices=ASSET_TYPE_CHOICES)
     asset_name = models.CharField(max_length=100)
     location = models.CharField(max_length=255)
@@ -64,19 +63,27 @@ class Asset(models.Model):
     account_number = models.CharField(max_length=10)
     bank = models.CharField(max_length=20)
 
+    def save(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        if not self.asset_number and user:
+            user_id = str(user.id).zfill(4)
+            asset_count = Asset.objects.filter(roles__user=user).count() + 1
+            self.asset_number = f"TAS-{user_id}-{str(asset_count).zfill(3)}"
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return self.asset_name
+        return f"{self.asset_number}: {self.asset_name}"
 
 
 class AssetEvent(models.Model):
-    asset = models.ForeignKey(Asset, on_delete=models.SET_NULL, null=True) # Retain events even if asset is deleted
+    asset = models.ForeignKey(Asset, to_field='asset_number', on_delete=models.CASCADE, null=True) # Retain events even if asset is deleted
     event_type = models.CharField(max_length=50, choices=EVENT_TYPE_CHOICES)
     timestamp = models.DateTimeField(auto_now_add=True)
     data = models.CharField(max_length=255)
 
     # Generic Foreign Key fields
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id = models.PositiveIntegerField()
+    object_id = models.CharField(max_length=10)
     sub_asset = GenericForeignKey('content_type', 'object_id')
 
     class Meta:
@@ -88,23 +95,25 @@ class AssetEvent(models.Model):
 
 class Role(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='roles')
-    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='roles')
+    asset = models.ForeignKey(Asset, to_field='asset_number', on_delete=models.CASCADE, related_name='roles')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        unique_together = ('user', 'asset')  # Ensures that each user can only have one role per asset
+        unique_together = ('user', 'asset')
 
     def __str__(self):
         return f"{self.user} is a {self.role} of {self.asset}"
 
 
 class HotelRoom(models.Model):
-    hotel = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='rooms', limit_choices_to={'asset_type': 'hotel'})
+    hotel = models.ForeignKey(Asset, to_field='asset_number', on_delete=models.CASCADE, related_name='rooms', limit_choices_to={'asset_type': 'hotel'})
     room_number = models.CharField(max_length=10)
     room_type = models.CharField(max_length=50)
     price = models.DecimalField(max_digits=10, decimal_places=2)
-    status = models.BooleanField(default=True)
+    status = models.BooleanField(default=False)
+    activation_timestamp = models.DateTimeField(blank=True, null=True)
+    expiry_timestamp = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         unique_together = ['hotel', 'room_number']
@@ -114,14 +123,16 @@ class HotelRoom(models.Model):
 
 
 class Vehicle(models.Model):
+    fleet = models.ForeignKey(Asset, to_field='asset_number', on_delete=models.CASCADE, related_name='fleet', limit_choices_to={'asset_type': 'vehicle'})
     last_latitude = models.FloatField(null=True, default=0)
     last_longitude = models.FloatField(null=True, blank=True, validators=[MinValueValidator(-90), MaxValueValidator(90)])
     total_distance = models.FloatField(default=0.0)  # in kilometers
-    fleet = models.ForeignKey('Asset', on_delete=models.CASCADE, related_name='fleet', limit_choices_to={'asset_type': 'vehicle'})
-    vehicle_number = models.CharField(max_length=255)
+    vehicle_number = models.CharField(max_length=10)
     brand = models.CharField(max_length=255)
     vehicle_type = models.CharField(max_length=255)
-    status = models.BooleanField(default=True)
+    status = models.BooleanField(default=False)
+    activation_timestamp = models.DateTimeField(blank=True, null=True)
+    expiry_timestamp = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         unique_together = ['fleet', 'vehicle_number']

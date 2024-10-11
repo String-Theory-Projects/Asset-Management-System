@@ -31,9 +31,12 @@ def verify_flutterwave_transaction(transaction_id):
     }
     
     try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()  # Raise an exception for non-2xx status codes
+        response = requests.get(url, headers=headers, timeout=30)  # Increased timeout
+        response.raise_for_status()
         return response.json(), None
-    except requests.RequestException as e:
-        logger.error(f"Error verifying Flutterwave transaction: {str(e)}")
-        return None, str(e)
+    except requests.exceptions.Timeout:
+        return None, "Connection timed out"
+    except requests.exceptions.RequestException as e:
+        return None, f"Connection error: {str(e)}"
+    except ValueError:  # Includes JSONDecodeError
+        return None, "Invalid response from Flutterwave"
