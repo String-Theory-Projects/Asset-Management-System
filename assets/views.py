@@ -203,11 +203,6 @@ class HotelRoomViewSet(ModelViewSet):
     lookup_field = 'room_number'
     lookup_url_kwarg = 'room_number'
 
-    def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsAuthenticated(), IsAdmin()]
-        return [IsAuthenticated()]
-
     def get_queryset(self):
         asset_number = self.kwargs.get('asset_number')
         asset = get_object_or_404(Asset, asset_number=asset_number)
@@ -215,13 +210,28 @@ class HotelRoomViewSet(ModelViewSet):
             raise NotFound("This asset is not a hotel.")
         return HotelRoom.objects.filter(hotel__asset_number=asset_number)
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAuthenticated(), IsAdmin()]
+        return [IsAuthenticated()]
+
     def check_permissions(self, request):
         super().check_permissions(request)
         asset_number = self.kwargs.get('asset_number')
         asset = get_object_or_404(Asset, asset_number=asset_number)
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             if not Role.objects.filter(user=request.user, asset__asset_number=asset_number, role='admin').exists():
-                raise PermissionDenied("You do not have admin permissions for this asset.")
+                self.permission_denied(request, message="You do not have admin permissions for this asset.")
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
         asset_number = self.kwargs.get('asset_number')
@@ -235,8 +245,6 @@ class HotelRoomViewSet(ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
-        asset_number = self.kwargs.get('asset_number')
-        get_object_or_404(Asset, asset_number=asset_number)
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
@@ -245,11 +253,10 @@ class HotelRoomViewSet(ModelViewSet):
         return Response(serializer.data)
 
     def destroy(self, request, *args, **kwargs):
-        asset_number = self.kwargs.get('asset_number')
-        get_object_or_404(Asset, asset_number=asset_number)
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class VehicleViewSet(ModelViewSet):
     serializer_class = VehicleSerializer

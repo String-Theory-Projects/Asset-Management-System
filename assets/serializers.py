@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from core.models import Asset
 from django.contrib.auth import get_user_model
-from core.models import HotelRoom, Vehicle, Role, Transaction
+from django.contrib.contenttypes.models import ContentType
+from core.models import HotelRoom, Vehicle, Role, Transaction, AssetEvent
 
 
 User = get_user_model()
@@ -75,15 +76,25 @@ class DisassociateUserSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
 
 
-
 class HotelRoomSerializer(serializers.ModelSerializer):
+    occupancy = serializers.SerializerMethodField()
+
     class Meta:
         model = HotelRoom
-        fields = ['id', 'room_number', 'room_type', 'price', 'status', 'hotel']
+        fields = ['id', 'room_number', 'room_type', 'price', 'status', 'hotel', 'occupancy']
         read_only_fields = ['id', 'hotel']
-        extra_kwargs = {
-            'room_number': {'required': True}
-        }
+
+    def get_occupancy(self, obj):
+        hotel_room_content_type = ContentType.objects.get_for_model(HotelRoom)
+        last_event = AssetEvent.objects.filter(
+            content_type=hotel_room_content_type,
+            object_id=obj.room_number,
+            event_type='occupancy'
+        ).order_by('-timestamp').first()
+
+        if last_event:
+            return last_event.data
+        return 0  # Or any default value you prefer
 
 
 class VehicleSerializer(serializers.ModelSerializer):
