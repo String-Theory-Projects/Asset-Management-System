@@ -1,19 +1,33 @@
+import logging
 import paho.mqtt.client as mqtt
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.models import Asset, AssetEvent, HotelRoom, Vehicle, Role
+from core.models import Asset, AssetEvent, HotelRoom, Vehicle
 from django.utils import timezone
 from datetime import timedelta
 from django.contrib.contenttypes.models import ContentType
 from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
+
+logger = logging.getLogger(__name__)
 
 # Configure the MQTT client
 MQTT_BROKER = 'broker.emqx.io'  # Replace with your MQTT broker address
 MQTT_PORT = 1883  # Default MQTT port
 
+User = get_user_model()
+
+def get_system_user_token():
+    system_user = User.objects.get(username='info@trykey.com')
+    refresh = RefreshToken.for_user(system_user)
+    return str(refresh.access_token)
+
 class ControlAssetView(APIView):
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def __init__(self, **kwargs):
@@ -23,9 +37,10 @@ class ControlAssetView(APIView):
 
     def post(self, request, *args, **kwargs):
         asset_number = kwargs.get('asset_number')
-        sub_asset_id = kwargs.get('sub_asset_id')  # Retrieve sub_asset_id from URL
+        sub_asset_id = kwargs.get('sub_asset_id')
         action_type = request.data.get('action_type')
         data = request.data.get('data')
+        update_status = request.data.get('update_status', False) # fail-safe flag to update sub_asset status by system user in case of celery task failure
 
         if not asset_number or not sub_asset_id or not action_type:
             return Response({'error': 'Asset number, sub-asset ID, and action type are required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -35,8 +50,8 @@ class ControlAssetView(APIView):
         except Asset.DoesNotExist:
             return Response({'error': 'Asset not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Ensure the user is an admin for the specified asset
-        if not request.user.roles.filter(asset=asset, role='admin').exists():
+        # Ensure the user is an admin for the specified asset or system user
+        if not (request.user.is_superuser or request.user.username == 'info@trykey.com' or request.user.roles.filter(asset=asset, role='admin').exists()):
             return Response({'error': 'You do not have permission to control this asset.'}, status=status.HTTP_403_FORBIDDEN)
 
         topic = None
@@ -46,7 +61,7 @@ class ControlAssetView(APIView):
             # Validate the sub-asset (room)
             try:
                 room = HotelRoom.objects.get(room_number=sub_asset_id, hotel=asset)
-                if room.status:
+                if room.status and request.user.username != 'info@trykey.com':
                     return Response({'error': 'Cannot control an active hotel room. Please check out the guest first.'}, status=status.HTTP_400_BAD_REQUEST)
             except HotelRoom.DoesNotExist:
                 return Response({'error': 'Room not found for the specified hotel.'}, status=status.HTTP_404_NOT_FOUND)
@@ -87,6 +102,14 @@ class ControlAssetView(APIView):
                 content_type=ContentType.objects.get_for_model(room if asset.asset_type == 'hotel' else vehicle),
                 object_id=sub_asset_id
             )
+
+            # Update room status if the flag is set
+            if update_status and asset.asset_type == 'hotel':
+                room = HotelRoom.objects.get(room_number=sub_asset_id, hotel=asset)
+                room.status = False
+                room.save()
+                logger.info(f"Room status updated to False for room {sub_asset_id}")
+
             return Response({'message': f'{action_type.capitalize()} control command sent.'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': f'Failed to send command: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

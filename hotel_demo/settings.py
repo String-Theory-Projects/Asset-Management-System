@@ -13,6 +13,10 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 from pathlib import Path
 import os
 
+
+# SYSTEM_USER_REQUEST_DOMAIN = 'https://dashboard.trykeyprotocol.com'
+SYSTEM_USER_REQUEST_DOMAIN = 'http://localhost:8000'
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -25,6 +29,15 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
+
+# Celery Configuration Options
+CELERY_TIMEZONE = "Africa/Lagos"
+CELERY_ENABLE_UTC = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # Flutterwave keys
 FLW_PUBLIC_KEY = os.getenv('FLW_PUBLIC_KEY')
@@ -43,9 +56,11 @@ AUTH_USER_MODEL = 'core.User'
 
 CORS_ALLOW_ALL_ORIGINS = True
 
+# for referencing APIs from frontend
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
-    "https://your-frontend-domain.com",
+    "https://dashboard.trykeyprotocol.com",
+    "https://company-website-mnmk-c7ma2a3cm-trykey-protocols-projects.vercel.app/"
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -55,7 +70,9 @@ CORS_ALLOW_CREDENTIALS = True
 INSTALLED_APPS = [
     'core',
     'assets',
-    # 'mqtt_handler',
+    'mqtt_handler',
+    'django_celery_beat',
+    'django_celery_results',
     'corsheaders',
     'whitenoise.runserver_nostatic',
     'django.contrib.admin',
@@ -167,7 +184,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = CELERY_TIMEZONE
 
 USE_I18N = True
 
@@ -193,21 +210,21 @@ SILENCED_SYSTEM_CHECKS = ['staticfiles.W004']
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# LOGGING = {
-#     'version': 1,
-#     'disable_existing_loggers': False,
-#     'handlers': {
-#         'file': {
-#             'level': 'DEBUG',
-#             'class': 'logging.FileHandler',
-#             'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
-#         },
-#     },
-#     'loggers': {
-#         'django': {
-#             'handlers': ['file'],
-#             'level': 'DEBUG',
-#             'propagate': True,
-#         },
-#     },
-# }
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['file'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}
