@@ -254,6 +254,8 @@ class InitiatePaymentView(APIView):
             try:
                 with transaction.atomic(): #start a transaction to ensure that the database is consistent
                     asset = Asset.objects.get(asset_number=asset_number)
+                    if not asset:
+                        return Response({"error": f"Asset ({asset_number}) does not exist"}, status=status.HTTP_400_BAD_REQUEST)
                     transaction_obj = Transaction.objects.create(
                         asset=asset,
                         sub_asset_number=sub_asset_number,
@@ -290,21 +292,20 @@ class VerifyPaymentView(APIView):
         # self.process_transaction(db_transaction, 'completed')
 
         if not all([tx_ref, status_param]):
-            logger.error(f"Missing required parameters: tx_ref={tx_ref}, status={status_param}")
             return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
                 db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
                 
-                if db_transaction.is_verified and db_transaction.payment_status == status_param:
+                if db_transaction.is_verified and db_transaction.payment_status == status_param: #checking for both is_verified and status because a transaction that has been verified could be changed to a different state
                     logger.info(f"Transaction {tx_ref} already verified")
                     return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
 
                 if status_param.lower() == 'failed':
                     self.process_transaction(db_transaction, 'failed')
                     logger.info(f"Transaction {tx_ref} marked as failed")
-                    return Response({"message": "Payment status updated to failed"}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"message": "Payment status updated to failed"}, status=status.HTTP_200_OK)
 
                 # Verify the transaction status with Flutterwave
                 transaction_data, error = verify_flutterwave_transaction(transaction_id)
@@ -323,7 +324,7 @@ class VerifyPaymentView(APIView):
                 if status_param == 'successful':
                     return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
                 else:
-                    return Response({"message": f"Payment status updated to {status_param}"}, status=status.HTTP_200_OK)
+                    return Response({"message": f"Payment status updated to {transaction_status}"}, status=status.HTTP_200_OK)
 
         except Transaction.DoesNotExist:
             logger.error(f"Transaction {tx_ref} not found in database")
@@ -334,7 +335,6 @@ class VerifyPaymentView(APIView):
 
     def process_transaction(self, transaction, status_param):
         self.update_transaction(transaction, status_param)
-        
         if status_param == 'completed' and not transaction.is_outgoing:
             self.update_asset_revenue(transaction)
             self.update_sub_asset(transaction)
@@ -346,7 +346,6 @@ class VerifyPaymentView(APIView):
     def update_transaction(self, transaction, status_param):
         transaction.payment_status = status_param
         transaction.is_verified = True
-        transaction.save()
         logger.info(f"Transaction {transaction.transaction_ref} updated successfully")
 
     def update_asset_revenue(self, transaction):
@@ -397,19 +396,18 @@ class VerifyPaymentView(APIView):
                 # Vehicle is not active or has expired, set new activation and expiry
                 vehicle.activation_timestamp = current_time
                 new_expiry = current_time + timedelta(days=duration_days)
-
             self.send_control_request(asset.asset_number, sub_asset_number, "ignition", "turn_on")
             
             vehicle.status = True
             vehicle.expiry_timestamp = new_expiry
             vehicle.save()
-            
             # Cancel any existing expiry task and schedule a new one
             schedule_sub_asset_expiry.apply_async(
                 args=[asset.asset_number, sub_asset_number, "ignition", "turn_off"],
                 eta=new_expiry
             )
-            
+            print("-----------truck goes brrr----------")
+
             logger.info(f"Updated Vehicle {vehicle.vehicle_number} status and timestamps. New expiry: {new_expiry}")
 
         else:
