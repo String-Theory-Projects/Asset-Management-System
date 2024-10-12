@@ -7,5 +7,5 @@ from .utils import payment_aggregator
 @receiver(post_delete, sender=Transaction)
 def update_total_revenue(sender, instance, **kwargs):
     if instance.payment_status == 'completed':
-        asset = instance.asset_id
+        asset = instance.asset
         payment_aggregator(asset)
