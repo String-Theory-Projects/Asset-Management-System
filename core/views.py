@@ -316,9 +316,9 @@ class VerifyPaymentView(APIView):
                     return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
 
                 transaction_status = 'completed' if transaction_data.get('status') == 'successful' else status_param
-                self.process_transaction(db_transaction, transaction_status)
 
                 if status_param == 'successful':
+                    self.process_transaction(db_transaction, transaction_status)
                     return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
                 else:
                     return Response({"message": f"Payment status updated to {status_param}"}, status=status.HTTP_200_OK)
