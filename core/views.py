@@ -286,53 +286,49 @@ class VerifyPaymentView(APIView):
         tx_ref = request.GET.get('tx_ref')
         transaction_id = request.GET.get('transaction_id')
         status_param = request.GET.get('status')
-        # PURELY FOR TESTING process_transaction()
-        db_transaction = Transaction.objects.get(transaction_ref=tx_ref)
-        self.process_transaction(db_transaction, 'completed')
-        return Response({"message": "ok"}, status=status.HTTP_200_OK)
 
-        # if not all([tx_ref, status_param]):
-        #     logger.error(f"Missing required parameters: tx_ref={tx_ref}, status={status_param}")
-        #     return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([tx_ref, status_param]):
+            logger.error(f"Missing required parameters: tx_ref={tx_ref}, status={status_param}")
+            return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # try:
-        #     with transaction.atomic():
-        #         db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
+        try:
+            with transaction.atomic():
+                db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
                 
-        #         if db_transaction.is_verified and db_transaction.payment_status == status_param:
-        #             logger.info(f"Transaction {tx_ref} already verified")
-        #             return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
+                if db_transaction.is_verified and db_transaction.payment_status == status_param:
+                    logger.info(f"Transaction {tx_ref} already verified")
+                    return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
 
-        #         if status_param.lower() == 'failed':
-        #             self.process_transaction(db_transaction, 'failed')
-        #             logger.info(f"Transaction {tx_ref} marked as failed")
-        #             return Response({"message": "Payment status updated to failed"}, status=status.HTTP_400_BAD_REQUEST)
+                if status_param.lower() == 'failed':
+                    self.process_transaction(db_transaction, 'failed')
+                    logger.info(f"Transaction {tx_ref} marked as failed")
+                    return Response({"message": "Payment status updated to failed"}, status=status.HTTP_400_BAD_REQUEST)
 
-        #         # Verify the transaction status with Flutterwave
-        #         transaction_data, error = verify_flutterwave_transaction(transaction_id)
+                # Verify the transaction status with Flutterwave
+                transaction_data, error = verify_flutterwave_transaction(transaction_id)
 
-        #         if error:
-        #             logger.error(f"Error verifying transaction: {error}")
-        #             return Response({"error": "Failed to verify transaction"}, status=status.HTTP_400_BAD_REQUEST)
+                if error:
+                    logger.error(f"Error verifying transaction: {error}")
+                    return Response({"error": "Failed to verify transaction"}, status=status.HTTP_400_BAD_REQUEST)
 
-        #         if not transaction_data:
-        #             logger.error("No transaction data received")
-        #             return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
+                if not transaction_data:
+                    logger.error("No transaction data received")
+                    return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
 
-        #         transaction_status = 'completed' if transaction_data.get('status') == 'successful' else status_param
-        #         self.process_transaction(db_transaction, transaction_status)
+                transaction_status = 'completed' if transaction_data.get('status') == 'successful' else status_param
+                self.process_transaction(db_transaction, transaction_status)
 
-        #         if status_param == 'successful':
-        #             return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
-        #         else:
-        #             return Response({"message": f"Payment status updated to {status_param}"}, status=status.HTTP_200_OK)
+                if status_param == 'successful':
+                    return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
+                else:
+                    return Response({"message": f"Payment status updated to {status_param}"}, status=status.HTTP_200_OK)
 
-        # except Transaction.DoesNotExist:
-        #     logger.error(f"Transaction {tx_ref} not found in database")
-        #     return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
-        # except Exception as e:
-        #     logger.error(f"Error processing transaction {tx_ref}: {str(e)}")
-        #     return Response({"error": "Error processing payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Transaction.DoesNotExist:
+            logger.error(f"Transaction {tx_ref} not found in database")
+            return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Error processing transaction {tx_ref}: {str(e)}")
+            return Response({"error": "Error processing payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def process_transaction(self, transaction, status_param):
         self.update_transaction(transaction, status_param)
