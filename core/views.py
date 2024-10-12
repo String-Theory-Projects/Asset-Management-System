@@ -32,7 +32,7 @@ from utils.payment import initiate_flutterwave_payment, verify_flutterwave_trans
 from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
 from core import *
 from .serializers import UserSerializer, TransactionSerializer
-from .models import User, Asset, HotelRoom, Transaction, Vehicle
+from .models import User, Asset, HotelRoom, Transaction, Vehicle, Role
 from .permissions import IsAdmin,IsManager
 
 
@@ -331,12 +331,28 @@ class VerifyPaymentView(APIView):
         transaction.is_verified = True
 
         transaction.save()
+        try:
+            asset = transaction.asset
+            user = asset.roles.first().user
+            
+            if user and user.email:
+                user_email = user.email
+                subject = f"Payment Update for Transaction {transaction.transaction_ref}"
+                message = f"Payment for asset {asset.asset_number} has been updated to {status_param}."
+                send_user_email.delay(user_email, subject, message)
+                logger.info(f"Transaction {transaction.transaction_ref} updated successfully and email sent to {user.email}")
+            else:
+                logger.warning(f"No user found for asset {asset.asset_number}")
+        except Role.DoesNotExist:
+            logger.error(f"No user roles found for asset {transaction.asset.asset_number}")
+        except Exception as e:
+            logger.error(f"Error sending email for transaction {transaction.transaction_ref}: {str(e)}")
 
         # Trigger async tasks
         # send_user_sms.delay() # NOTE: these are currently unimplemented
-        # send_user_email.delay()
 
-        logger.info(f"Transaction {transaction.transaction_ref} updated successfully")
+
+
 
 class FlutterwaveWebhookView(APIView):
 

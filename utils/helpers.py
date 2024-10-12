@@ -3,6 +3,8 @@ from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
+from django.core.mail import send_mail
+from hotel_demo import settings
 
 
 
@@ -54,7 +56,15 @@ def validate_field(data, field_name: str, expected_types, required: bool = True,
 
 # ----------- Email & sms helpers -------------
 @shared_task
-def send_user_email(**kwargs):
+def send_user_email(user_email, subject, message):
+
+    send_mail(
+        subject,
+        message,
+        settings.DEFAULT_FROM_EMAIL,
+        [user_email],
+        fail_silently=False
+    )
     """Function that sends emails to users
     
     Args: receiver_email: str , message_details:{}
