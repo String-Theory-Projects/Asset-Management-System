@@ -31,6 +31,8 @@ FLW_PUBLIC_KEY = os.getenv('FLW_PUBLIC_KEY')
 FLW_SECRET_KEY = os.getenv('FLW_SECRET_KEY')
 FLW_SECRET_HASH = os.getenv('FLW_SECRET_HASH', '')
 
+# Paystack keys
+PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
 ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'dashboard.trykeyprotocol.com']
 
 CSRF_TRUSTED_ORIGINS = [

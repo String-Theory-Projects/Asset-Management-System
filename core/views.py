@@ -26,7 +26,7 @@ from datetime import timedelta
 import math
 
 from utils.helpers import *
-from utils.payment import initiate_flutterwave_payment, verify_flutterwave_transaction
+from utils.payment import initiate_paystack_payment, verify_paystack_payment
 
 from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
 from core import *
@@ -216,10 +216,34 @@ class InitiatePaymentView(APIView):
             description = validate_field(request.data, "description", [str])
             asset_number = validate_field(request.data, "asset_number", [str])
             sub_asset_number = validate_field(request.data, "sub_asset_number", [str])
+            sub_asset_type = validate_field(request.data, "sub_asset_type", [str], required=False)
             
             # Optional fields
             currency = validate_field(request.data, "currency", [str], required=False, default="NGN")
             is_outgoing = validate_field(request.data, "is_outgoing", [bool], required=False, default=False)
+
+            # check if the asset and subasset exist
+            asset = Asset.objects.filter(asset_number=asset_number).first()
+            if not asset:
+                raise ValueError("Asset not found.")
+
+            # Determine if we should filter by a specific sub-asset type
+            if sub_asset_type:
+                sub_asset = None
+                if sub_asset_type == "vehicle":
+                    sub_asset = Vehicle.objects.filter(vehicle_number=sub_asset_number).first()
+                elif sub_asset_type == "hotel_room":
+                    sub_asset = HotelRoom.objects.filter(room_number=sub_asset_number).first()
+                
+                if not sub_asset:
+                    raise ValueError(f"{sub_asset_type.capitalize()} sub-asset not found.")
+            else:
+                # Check all sub-assets for the given asset number
+                vehicle_sub_assets = Vehicle.objects.filter(vehicle_number=sub_asset_number).first()
+                hotel_room_sub_assets = HotelRoom.objects.filter(room_number=sub_asset_number).first()
+
+                if not vehicle_sub_assets and not hotel_room_sub_assets:
+                    raise ValueError("No sub-assets found for the given asset number.")
 
         except KeyError as e:
             return Response({"error": f"Missing required field: {e.args[0]}"}, status=status.HTTP_400_BAD_REQUEST)
@@ -229,23 +253,15 @@ class InitiatePaymentView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         payment_data = {
-            "tx_ref": tx_ref,
+            "email": customer_email,
             "amount": amount,
             "currency": currency,
-            "redirect_url": redirect_url,
-            "customer": {
-                "email": customer_email,
-                "name": customer_name,
-                "phonenumber": customer_phonenumber
-            },
-            "customizations": {
-                "title": title,
-                "description": description
-            }
+            "callback_url": redirect_url,
+            "reference": tx_ref
         }
 
 
-        payment_link, error = initiate_flutterwave_payment(payment_data)
+        payment_link, error = initiate_paystack_payment(payment_data)
 
         if error:
             return Response({"error": error}, status=status.HTTP_400_BAD_REQUEST)
@@ -274,7 +290,7 @@ class InitiatePaymentView(APIView):
                     "transaction_id": transaction_obj.id
                 }, status=status.HTTP_200_OK)
             except Asset.DoesNotExist:
-                return Response({"error": "Invalid asset_id"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": "Invalid asset number"}, status=status.HTTP_400_BAD_REQUEST)
             except Exception as e:
                 return Response({"error": f"Failed to create transaction: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         else:
@@ -285,30 +301,20 @@ class VerifyPaymentView(APIView):
 
     def get(self, request):
         tx_ref = request.GET.get('tx_ref')
-        transaction_id = request.GET.get('transaction_id')
-        status_param = request.GET.get('status')
-        # PURELY FOR TESTING process_transaction()
-        # db_transaction = Transaction.objects.get(transaction_ref=tx_ref)
-        # self.process_transaction(db_transaction, 'completed')
 
-        if not all([tx_ref, status_param]):
+        if not tx_ref:
             return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
                 db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
                 
-                if db_transaction.is_verified and db_transaction.payment_status == status_param: #checking for both is_verified and status because a transaction that has been verified could be changed to a different state
+                if db_transaction.is_verified: 
                     logger.info(f"Transaction {tx_ref} already verified")
                     return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
 
-                if status_param.lower() == 'failed':
-                    self.process_transaction(db_transaction, 'failed')
-                    logger.info(f"Transaction {tx_ref} marked as failed")
-                    return Response({"message": "Payment status updated to failed"}, status=status.HTTP_200_OK)
-
                 # Verify the transaction status with Flutterwave
-                transaction_data, error = verify_flutterwave_transaction(transaction_id)
+                transaction_data, error = verify_paystack_payment(tx_ref)
 
                 if error:
                     logger.error(f"Error verifying transaction: {error}")
@@ -318,10 +324,10 @@ class VerifyPaymentView(APIView):
                     logger.error("No transaction data received")
                     return Response({"error": "No transaction data received"}, status=status.HTTP_400_BAD_REQUEST)
 
-                transaction_status = 'completed' if transaction_data.get('status') == 'successful' else status_param
+                transaction_status =  "completed" if transaction_data['message'] == "Verification successful" else "failed"
                 self.process_transaction(db_transaction, transaction_status)
 
-                if status_param == 'successful':
+                if transaction_status == 'completed':
                     return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
                 else:
                     return Response({"message": f"Payment status updated to {transaction_status}"}, status=status.HTTP_200_OK)
@@ -329,6 +335,9 @@ class VerifyPaymentView(APIView):
         except Transaction.DoesNotExist:
             logger.error(f"Transaction {tx_ref} not found in database")
             return Response({"error": "Transaction not found"}, status=status.HTTP_404_NOT_FOUND)
+        except KeyError as e:
+            logger.error(f"Error parsing api response: {e}")
+            return Response({"error": "Merchant error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e:
             logger.error(f"Error processing transaction {tx_ref}: {str(e)}")
             return Response({"error": "Error processing payment"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -346,6 +355,7 @@ class VerifyPaymentView(APIView):
     def update_transaction(self, transaction, status_param):
         transaction.payment_status = status_param
         transaction.is_verified = True
+        transaction.save()
         logger.info(f"Transaction {transaction.transaction_ref} updated successfully")
 
     def update_asset_revenue(self, transaction):
@@ -372,7 +382,6 @@ class VerifyPaymentView(APIView):
                 new_expiry = current_time + timedelta(minutes=duration_days)
 
             self.send_control_request(asset.asset_number, sub_asset_number, "access", "unlock")
-            
             room.status = True
             room.expiry_timestamp = new_expiry
             room.save()
@@ -397,17 +406,15 @@ class VerifyPaymentView(APIView):
                 vehicle.activation_timestamp = current_time
                 new_expiry = current_time + timedelta(days=duration_days)
             self.send_control_request(asset.asset_number, sub_asset_number, "ignition", "turn_on")
-            
+
             vehicle.status = True
             vehicle.expiry_timestamp = new_expiry
             vehicle.save()
             # Cancel any existing expiry task and schedule a new one
-            schedule_sub_asset_expiry.apply_async(
-                args=[asset.asset_number, sub_asset_number, "ignition", "turn_off"],
-                eta=new_expiry
-            )
-            print("-----------truck goes brrr----------")
-
+            # schedule_sub_asset_expiry.apply_async(
+            #     args=[asset.asset_number, sub_asset_number, "ignition", "turn_off"],
+            #     eta=new_expiry
+            # )
             logger.info(f"Updated Vehicle {vehicle.vehicle_number} status and timestamps. New expiry: {new_expiry}")
 
         else:
@@ -431,42 +438,6 @@ class VerifyPaymentView(APIView):
             if hasattr(e, 'response'):
                 logger.error(f"Response status code: {e.response.status_code}")
                 logger.error(f"Response content: {e.response.content}")
-
-
-class FlutterwaveWebhookView(APIView):
-
-    """
-    Webhook to allow flutterwave update transaction status on db  
-    Keyword arguments:
-    argument -- description
-    Return: return_description
-    """
-    
-    def post(self, request):
-        # Verify webhook signature
-        if not self.verify_webhook_signature(request):
-            logger.error("Invalid webhook signature")
-            return Response({"error": "Invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
-
-        event_type = request.data.get('event')
-        if event_type == 'charge.completed':
-            tx_ref = request.data['data']['tx_ref']
-            try:
-                with transaction.atomic():
-                    db_transaction = Transaction.objects.select_for_update().get(transaction_ref=tx_ref)
-                    if not db_transaction.is_verified:
-                        verification_result = self.verify_flutterwave_transaction(request.data['data']['id'])
-                        if verification_result['status'] == 'success':
-                            self.update_transaction(db_transaction, verification_result)
-            except Transaction.DoesNotExist:
-                logger.error(f"Transaction {tx_ref} not found for webhook event")
-            except Exception as e:
-                logger.error(f"Error processing webhook for transaction {tx_ref}: {str(e)}")
-
-        return Response({"status": "Webhook received"}, status=status.HTTP_200_OK)
-
-    def verify_webhook_signature(self, request):
-        return settings.FLW_SECRET_HASH == request.headers.get("verif-hash")
 
 class TransactionPagination(PageNumberPagination):
     page_size = 10
