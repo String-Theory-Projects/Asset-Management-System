@@ -313,9 +313,8 @@ class VerifyPaymentView(APIView):
                     logger.info(f"Transaction {tx_ref} already verified")
                     return Response({"message": "Payment already verified"}, status=status.HTTP_200_OK)
 
-                # Verify the transaction status with Flutterwave
+                # Verify the transaction status with Paystack
                 transaction_data, error = verify_paystack_payment(tx_ref)
-
                 if error:
                     logger.error(f"Error verifying transaction: {error}")
                     return Response({"error": "Failed to verify transaction"}, status=status.HTTP_400_BAD_REQUEST)
@@ -326,7 +325,6 @@ class VerifyPaymentView(APIView):
 
                 transaction_status =  "completed" if transaction_data['message'] == "Verification successful" else "failed"
                 self.process_transaction(db_transaction, transaction_status)
-
                 if transaction_status == 'completed':
                     return Response({"message": "Payment verified successfully"}, status=status.HTTP_200_OK)
                 else:
@@ -411,10 +409,10 @@ class VerifyPaymentView(APIView):
             vehicle.expiry_timestamp = new_expiry
             vehicle.save()
             # Cancel any existing expiry task and schedule a new one
-            # schedule_sub_asset_expiry.apply_async(
-            #     args=[asset.asset_number, sub_asset_number, "ignition", "turn_off"],
-            #     eta=new_expiry
-            # )
+            schedule_sub_asset_expiry.apply_async(
+                args=[asset.asset_number, sub_asset_number, "ignition", "turn_off"],
+                eta=new_expiry
+            )
             logger.info(f"Updated Vehicle {vehicle.vehicle_number} status and timestamps. New expiry: {new_expiry}")
 
         else:
@@ -433,11 +431,8 @@ class VerifyPaymentView(APIView):
             response = requests.post(url, json=payload, headers=headers)
             response.raise_for_status()
             logger.info(f"Control request sent successfully: {url}")
-        except requests.RequestException as e:
+        except Exception as e:
             logger.error(f"Failed to send control request: {str(e)}")
-            if hasattr(e, 'response'):
-                logger.error(f"Response status code: {e.response.status_code}")
-                logger.error(f"Response content: {e.response.content}")
 
 class TransactionPagination(PageNumberPagination):
     page_size = 10
