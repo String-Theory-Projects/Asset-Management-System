@@ -13,7 +13,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 # import settings
 from django.conf import settings
 # Configure the MQTT client
-MQTT_BROKER = 'localhost'  # Replace with your MQTT broker address
+MQTT_BROKER = 'broker.emqx.io'  # Replace with your MQTT broker address
 MQTT_PORT = 1883  # Default MQTT port
 
 User = get_user_model()
@@ -31,11 +31,14 @@ class ControlAssetView(APIView):
         super().__init__(**kwargs)
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT)
+
     def post(self, request, *args, **kwargs):
         asset_number = kwargs.get('asset_number')
         sub_asset_id = kwargs.get('sub_asset_id')
         action_type = request.data.get('action_type')
         data = request.data.get('data')
+        update_status = request.data.get('update_status', False) # fail-safe flag to update sub_asset status by system user in case of celery task failure
+
         if not asset_number or not sub_asset_id or not action_type:
             return Response({'error': 'Asset number, sub-asset ID, and action type are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -55,7 +58,7 @@ class ControlAssetView(APIView):
             # Validate the sub-asset (room)
             try:
                 room = HotelRoom.objects.get(room_number=sub_asset_id, hotel=asset)
-                if room.status:
+                if room.status and request.user.username != 'info@trykey.com':
                     return Response({'error': 'Cannot control an active hotel room. Please check out the guest first.'}, status=status.HTTP_400_BAD_REQUEST)
             except HotelRoom.DoesNotExist:
                 return Response({'error': 'Room not found for the specified hotel.'}, status=status.HTTP_404_NOT_FOUND)
@@ -86,7 +89,7 @@ class ControlAssetView(APIView):
 
         # Publish the MQTT command
         try:
-            self.mqtt_client.publish(topic, data)  # Assuming `data` contains the command to send
+            self.mqtt_client.publish(topic, data, retain=True)  # Assuming `data` contains the command to send
             # Log the action with sub-asset
             AssetEvent.objects.create(
                 asset=asset,
@@ -96,6 +99,14 @@ class ControlAssetView(APIView):
                 content_type=ContentType.objects.get_for_model(room if asset.asset_type == 'hotel' else vehicle),
                 object_id=sub_asset_id
             )
+
+            # Update room status if the flag is set
+            if update_status and asset.asset_type == 'hotel':
+                room = HotelRoom.objects.get(room_number=sub_asset_id, hotel=asset)
+                room.status = False
+                room.save()
+                logger.info(f"Room status updated to False for room {sub_asset_id}")
+
             return Response({'message': f'{action_type.capitalize()} control command sent.'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': f'Failed to send command: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

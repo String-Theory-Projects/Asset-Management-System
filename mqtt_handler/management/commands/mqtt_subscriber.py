@@ -25,7 +25,7 @@ class MQTTSubscriber(threading.Thread):
 
         try:
             asset_number, object_id, event_type, content_type = extract_event_info(message.topic)
-            print(f"Extracted info: asset_number={asset_number}, object_id={object_id}, event_type={event_type}")
+            # print(f"Extracted info: asset_number={asset_number}, object_id={object_id}, event_type={event_type}")
 
             # Check if the Asset exists
             try:
@@ -72,7 +72,7 @@ class MQTTSubscriber(threading.Thread):
                             data=data,
                             timestamp=timezone.now()
                         )
-                        print(f"Successfully created AssetEvent: asset_number={asset_number}, vehicle={stored_object_id}, event_type={event_type}")
+                        # print(f"Successfully created AssetEvent: asset_number={asset_number}, vehicle={stored_object_id}, event_type={event_type}")
 
                 except Vehicle.DoesNotExist:
                     print(f"Vehicle with number {object_id} does not exist for asset {asset_number}.")
@@ -99,7 +99,7 @@ class MQTTSubscriber(threading.Thread):
                 print(f"Unsupported content type: {content_type}")
                 return
 
-            print(f"Successfully created AssetEvent for asset_number={asset_number}, {content_type.model}={stored_object_id}")
+            # print(f"Successfully created AssetEvent for asset_number={asset_number}, {content_type.model}={stored_object_id}")
 
         except Exception as e:
             print(f"Error processing message: {str(e)}")
