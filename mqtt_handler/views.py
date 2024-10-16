@@ -1,3 +1,4 @@
+import logging
 import paho.mqtt.client as mqtt
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -11,6 +12,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+
+logger = logging.getLogger(__name__)
 
 # Configure the MQTT client
 MQTT_BROKER = 'broker.emqx.io'  # Replace with your MQTT broker address
@@ -29,7 +32,7 @@ class ControlAssetView(APIView):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self.mqtt_client = mqtt.Client()
         self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT)
 
     def post(self, request, *args, **kwargs):
@@ -37,6 +40,7 @@ class ControlAssetView(APIView):
         sub_asset_id = kwargs.get('sub_asset_id')
         action_type = request.data.get('action_type')
         data = request.data.get('data')
+        update_status = request.data.get('update_status', False) # fail-safe flag to update sub_asset status by system user in case of celery task failure
 
         if not asset_number or not sub_asset_id or not action_type:
             return Response({'error': 'Asset number, sub-asset ID, and action type are required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -57,7 +61,7 @@ class ControlAssetView(APIView):
             # Validate the sub-asset (room)
             try:
                 room = HotelRoom.objects.get(room_number=sub_asset_id, hotel=asset)
-                if room.status:
+                if room.status and request.user.username != 'info@trykey.com':
                     return Response({'error': 'Cannot control an active hotel room. Please check out the guest first.'}, status=status.HTTP_400_BAD_REQUEST)
             except HotelRoom.DoesNotExist:
                 return Response({'error': 'Room not found for the specified hotel.'}, status=status.HTTP_404_NOT_FOUND)
@@ -98,6 +102,14 @@ class ControlAssetView(APIView):
                 content_type=ContentType.objects.get_for_model(room if asset.asset_type == 'hotel' else vehicle),
                 object_id=sub_asset_id
             )
+
+            # Update room status if the flag is set
+            if update_status and asset.asset_type == 'hotel':
+                room = HotelRoom.objects.get(room_number=sub_asset_id, hotel=asset)
+                room.status = False
+                room.save()
+                logger.info(f"Room status updated to False for room {sub_asset_id}")
+
             return Response({'message': f'{action_type.capitalize()} control command sent.'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': f'Failed to send command: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

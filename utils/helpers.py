@@ -60,6 +60,8 @@ def send_user_email(**kwargs):
     Args: receiver_email: str , message_details:{}
     Return: None
     """
+    
+    pass
 
 @shared_task
 def send_user_sms(**kwargs):
