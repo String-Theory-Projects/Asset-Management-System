@@ -36,6 +36,7 @@ python-dateutil==2.9.0.post0
 python-http-client==3.3.7
 PyYAML==6.0.2
 rave-python==1.4.1
+redis
 requests==2.32.3
 sendgrid==6.11.0
 six==1.16.0
