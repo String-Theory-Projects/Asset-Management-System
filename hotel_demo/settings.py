@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -57,7 +58,7 @@ CORS_ALLOW_CREDENTIALS = True
 INSTALLED_APPS = [
     'core',
     'assets',
-    # 'mqtt_handler',
+    'mqtt_handler',
     'corsheaders',
     'whitenoise.runserver_nostatic',
     'django.contrib.admin',
@@ -69,6 +70,14 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
 ]
+
+
+is_testing = 'test' in sys.argv or 'pytest' in sys.modules
+
+# Remove 'mqtt_handler' if in testing mode
+if is_testing:
+    INSTALLED_APPS = [app for app in INSTALLED_APPS if app != 'mqtt_handler']
+
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -134,10 +143,8 @@ WSGI_APPLICATION = 'hotel_demo.wsgi.application'
 
 DATABASES = {
     'default': {
-        # 'ENGINE': 'django.db.backends.sqlite3',
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('DB_NAME'),
-        # 'NAME': BASE_DIR / 'db.sqlite3',
         'USER': os.environ.get('DB_USER'),
         'PASSWORD': os.environ.get('DB_PASSWORD'),
         'HOST': os.environ.get('DB_HOST'),
