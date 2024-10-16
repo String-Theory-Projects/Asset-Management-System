@@ -29,7 +29,7 @@ class ControlAssetView(APIView):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.mqtt_client = mqtt.Client()
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT)
 
     def post(self, request, *args, **kwargs):
