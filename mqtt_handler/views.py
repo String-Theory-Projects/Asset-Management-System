@@ -92,7 +92,7 @@ class ControlAssetView(APIView):
 
         # Publish the MQTT command
         try:
-            self.mqtt_client.publish(topic, data)  # Assuming `data` contains the command to send
+            self.mqtt_client.publish(topic, data, retain=True, qos=1)  # Assuming `data` contains the command to send
             # Log the action with sub-asset
             AssetEvent.objects.create(
                 asset=asset,
