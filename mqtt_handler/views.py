@@ -10,10 +10,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.authentication import JWTAuthentication
-
-
+# import settings
+from django.conf import settings
 # Configure the MQTT client
-MQTT_BROKER = 'broker.emqx.io'  # Replace with your MQTT broker address
+MQTT_BROKER = 'localhost'  # Replace with your MQTT broker address
 MQTT_PORT = 1883  # Default MQTT port
 
 User = get_user_model()
@@ -31,13 +31,11 @@ class ControlAssetView(APIView):
         super().__init__(**kwargs)
         self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT)
-
     def post(self, request, *args, **kwargs):
         asset_number = kwargs.get('asset_number')
         sub_asset_id = kwargs.get('sub_asset_id')
         action_type = request.data.get('action_type')
         data = request.data.get('data')
-
         if not asset_number or not sub_asset_id or not action_type:
             return Response({'error': 'Asset number, sub-asset ID, and action type are required.'}, status=status.HTTP_400_BAD_REQUEST)
 

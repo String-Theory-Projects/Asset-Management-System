@@ -260,7 +260,7 @@ class VerifyPaymentViewTests(TestCase):
         self.url = reverse('verify_payment')
 
         user = User.objects.create(
-            username='admin',
+            username='info@trykey.com',
             email='info@trykey.com',
             password='admin',
             is_superuser=True
