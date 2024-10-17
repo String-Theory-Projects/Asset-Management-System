@@ -369,7 +369,7 @@ class VerifyPaymentView(APIView):
                 room.activation_timestamp = current_time
                 new_expiry = current_time + timedelta(minutes=duration_days)
 
-            send_control_request.apply_async(args=[asset.asset_number, sub_asset_number, "access", "unlock"], eta=datetime.now())
+            send_control_request.apply_async(args=[asset.asset_number, sub_asset_number, "access", "unlock"])
             room.status = True
             room.expiry_timestamp = new_expiry
             room.save()
