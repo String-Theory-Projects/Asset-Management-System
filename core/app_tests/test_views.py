@@ -135,9 +135,9 @@ class InitiatePaymentViewTests(TestCase):
         response = self.client.post(self.url, self.valid_payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('payment_link', response.data)
-        self.assertIn('transaction_id', response.data)
+        self.assertIn('transaction_ref', response.data)
         
-        transaction = Transaction.objects.get(id=response.data['transaction_id'])
+        transaction = Transaction.objects.get(transaction_ref=response.data['transaction_ref'])
         self.assertEqual(transaction.amount, Decimal(self.valid_payload['amount']))
         self.assertEqual(str(transaction.asset.asset_number), str(self.asset2.asset_number))
 
@@ -433,7 +433,7 @@ class VerifyPaymentViewTests(TestCase):
     @patch('core.views.send_user_email.delay')
     def test_successful_verification(self, mock_email, mock_sms, mock_verify):
         mock_verify.return_value = ({'message': 'Verification successful', 'amount': '5000.00', 'currency': 'NGN'}, None)
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['message'], "Payment verified successfully")
         
@@ -444,7 +444,7 @@ class VerifyPaymentViewTests(TestCase):
     @patch('core.views.verify_paystack_payment')
     def test_paystack_verification_error(self, mock_verify):
         mock_verify.return_value = (None, "API Error")
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.data['error'], "Failed to verify transaction")
@@ -461,7 +461,7 @@ class VerifyPaymentViewTests(TestCase):
         self.completed_transaction.is_verified = True
         self.completed_transaction.save()
         
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['message'], "Payment already verified")
@@ -475,7 +475,7 @@ class VerifyPaymentViewTests(TestCase):
         self.completed_transaction.sub_asset_number = self.room1.room_number
         self.completed_transaction.save()
 
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.room1.refresh_from_db()
@@ -486,7 +486,7 @@ class VerifyPaymentViewTests(TestCase):
     def test_vehicle_status_update(self, mock_verify):
         mock_verify.return_value = (self.mock_paystack_response, None)
 
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.vehicle1.refresh_from_db()
@@ -498,7 +498,7 @@ class VerifyPaymentViewTests(TestCase):
         mock_verify.return_value = (self.mock_paystack_response, None)
 
         initial_revenue = self.vehicle_asset.total_revenue
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.vehicle_asset.refresh_from_db()
@@ -508,7 +508,7 @@ class VerifyPaymentViewTests(TestCase):
     def test_expiry_task_scheduling(self, mock_verify):
         mock_verify.return_value = (self.mock_paystack_response, None)
 
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @patch('core.views.verify_paystack_payment')
@@ -521,7 +521,7 @@ class VerifyPaymentViewTests(TestCase):
 
         initial_expiry = self.vehicle1.expiry_timestamp
 
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.vehicle1.refresh_from_db()
@@ -537,7 +537,7 @@ class VerifyPaymentViewTests(TestCase):
         self.vehicle1.expiry_timestamp = timezone.now() - timedelta(days=1)
         self.vehicle1.save()
 
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.vehicle1.refresh_from_db()
@@ -553,7 +553,7 @@ class VerifyPaymentViewTests(TestCase):
         self.completed_transaction.amount = Decimal('403.33')  # 40333 kobo
         self.completed_transaction.save()
 
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.room1.refresh_from_db()
@@ -567,7 +567,7 @@ class VerifyPaymentViewTests(TestCase):
     def test_connection_error_handling(self, mock_verify):
         mock_verify.side_effect = ConnectionError("Unable to connect to Paystack API")
 
-        response = self.client.get(self.url, {'tx_ref': 'tx_ref_completed'})
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertIn('error', response.data)
 

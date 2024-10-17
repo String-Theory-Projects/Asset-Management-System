@@ -31,7 +31,6 @@ def send_control_request(asset_number, sub_asset_number, action_type, data):
         'action_type': action_type,
         'data': data
     }
-    print(get_system_user_token())
     try:
         response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
@@ -39,5 +38,3 @@ def send_control_request(asset_number, sub_asset_number, action_type, data):
     except Exception as e:
         logger.error(f"Failed to send control request: {str(e)}")
 
-
-        eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzYwNjU0MDAyLCJpYXQiOjE3MjkxMTgwMDIsImp0aSI6IjJiMzQxYzMwMGU1ZTRhMTlhY2YyMzFiNmJiZWFlNDFmIiwidXNlcl9pZCI6MX0.ZXirxokn2DMupoWXBCJDK2zJRhNLk31e7k7km - XOzBI
