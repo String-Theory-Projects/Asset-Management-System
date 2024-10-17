@@ -17,7 +17,8 @@ def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data)
     }
     payload = {
         'action_type': action_type,
-        'data': data
+        'data': data,
+        'update_status': True,
     }
     try:
         response = requests.post(url, json=payload, headers=headers)
