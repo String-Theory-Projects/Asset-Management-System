@@ -1,6 +1,5 @@
 import os
 import yaml
-from .tasks import *
 
 conf_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'conf.yml')
 
