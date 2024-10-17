@@ -11,7 +11,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 @shared_task
 def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data):
-    url = f'{settings.DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}'
+    url = f'{settings.DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
     headers = {
         'Authorization': f'Bearer {get_system_user_token()}'
     }
