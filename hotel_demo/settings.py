@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 from pathlib import Path
 import os
 import sys
+from datetime import timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -22,7 +23,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
-
 
 # system domain
 DOMAIN = os.getenv('SYSTEM_USER_REQUEST_DOMAIN', 'localhost:8000')
@@ -40,11 +40,12 @@ FLW_SECRET_HASH = os.getenv('FLW_SECRET_HASH', '')
 
 # Paystack keys
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
-ALLOWED_HOSTS = [i for i in {DOMAIN, 'dashboard.trykeyprotocol.com'}]
 
+ALLOWED_HOSTS = [i for i in {DOMAIN, 'dashboard.trykeyprotocol.com', 'localhost'}]
 
 CSRF_TRUSTED_ORIGINS = [
-    DOMAIN,
+    f"http://{DOMAIN}",
+    f"https://{DOMAIN}",
     'chrome-extension://amknoiejhlmhancpahfcfcfhllgkpbld'
 ]
 
@@ -53,7 +54,8 @@ AUTH_USER_MODEL = 'core.User'
 CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOWED_ORIGINS = [
-    DOMAIN,
+    f"http://{DOMAIN}",
+    f"https://{DOMAIN}",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -76,13 +78,11 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
 ]
 
-
 is_testing = 'test' in sys.argv or 'pytest' in sys.modules
 
 # Remove 'mqtt_handler' if in testing mode
 if is_testing:
     INSTALLED_APPS = [app for app in INSTALLED_APPS if app != 'mqtt_handler']
-
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -94,9 +94,7 @@ REST_FRAMEWORK = {
     ]
 }
 
-# Optional: JWT configuration
-from datetime import timedelta
-
+# JWT configuration
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=365),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=365),
@@ -142,7 +140,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'hotel_demo.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
@@ -168,6 +165,7 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TASK_SERIALIZER = 'json'
+
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
@@ -186,7 +184,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
@@ -197,7 +194,6 @@ TIME_ZONE = 'Africa/Lagos'
 USE_I18N = True
 
 USE_TZ = True
-
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
