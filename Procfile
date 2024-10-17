@@ -1,1 +1,3 @@
-web: celery -A hotel_demo worker --loglevel=info & python manage.py migrate && gunicorn hotel_demo.wsgi  --bind 0.0.0.0:$PORT
+web: gunicorn hotel_demo.wsgi --log-file=- --access-logfile=- --error-logfile=- --capture-output
+worker: celery -A hotel_demo worker --loglevel=info
+beat: celery -A hotel_demo beat --loglevel=info
