@@ -15,7 +15,6 @@ class TransactionHistorySerializer(serializers.ModelSerializer):
         
 
 class AssetSerializer(serializers.ModelSerializer):
-    asset_number = serializers.SerializerMethodField()
     user_role = serializers.SerializerMethodField()
     sub_asset_count = serializers.SerializerMethodField()
 
