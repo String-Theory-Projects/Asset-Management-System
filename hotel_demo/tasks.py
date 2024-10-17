@@ -2,10 +2,11 @@ from celery import shared_task
 import requests
 import logging
 from mqtt_handler.views import get_system_user_token
+from hotel_demo.settings import SYSTEM_USER_REQUEST_DOMAIN
 
 
 logger = logging.getLogger(__name__)
-DOMAIN = 'http://localhost:8000'
+DOMAIN = SYSTEM_USER_REQUEST_DOMAIN
 
 @shared_task
 def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data):
