@@ -4,20 +4,21 @@ import requests
 import logging
 import json
 from mqtt_handler.views import get_system_user_token
-from hotel_demo.settings import DOMAIN
+from django.conf import settings
 
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 @shared_task
 def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data):
-    url = f'{DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}'
+    url = f'{settings.DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
     headers = {
         'Authorization': f'Bearer {get_system_user_token()}'
     }
     payload = {
         'action_type': action_type,
-        'data': data
+        'data': data,
+        'update_status': True,
     }
     try:
         response = requests.post(url, json=payload, headers=headers)
@@ -28,7 +29,7 @@ def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data)
 
 @shared_task()
 def send_control_request(asset_number, sub_asset_number, action_type, data):
-    url = f'{DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
+    url = f'{settings.DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
     headers = {
         'Authorization': f'Bearer {get_system_user_token()}',
         'Content-Type': 'application/json'

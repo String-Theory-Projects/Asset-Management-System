@@ -25,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # system domain
-DOMAIN = os.getenv('SYSTEM_USER_REQUEST_DOMAIN', 'localhost:8000')
+DOMAIN = os.getenv('SYSTEM_USER_REQUEST_DOMAIN', 'http://localhost:8000')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -66,6 +66,8 @@ INSTALLED_APPS = [
     'core',
     'assets',
     'mqtt_handler',
+    'django_celery_results',
+    'django_celery_beat',
     'corsheaders',
     'whitenoise.runserver_nostatic',
     'django.contrib.admin',
@@ -214,21 +216,16 @@ SILENCED_SYSTEM_CHECKS = ['staticfiles.W004']
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# LOGGING = {
-#     'version': 1,
-#     'disable_existing_loggers': False,
-#     'handlers': {
-#         'file': {
-#             'level': 'DEBUG',
-#             'class': 'logging.FileHandler',
-#             'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
-#         },
-#     },
-#     'loggers': {
-#         'django': {
-#             'handlers': ['file'],
-#             'level': 'DEBUG',
-#             'propagate': True,
-#         },
-#     },
-# }
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+}
