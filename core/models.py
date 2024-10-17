@@ -4,7 +4,9 @@ from django.utils import timezone
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from geopy.distance import geodesic
+
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
 
 from core import * #import the global variables from conf
 
@@ -136,6 +138,13 @@ class HotelRoom(models.Model):
     def __str__(self):
         return f"{self.room_number} - {self.room_type} in {self.hotel.asset_name}"
 
+    def clean(self):
+        if self.price <= 0:
+            raise ValidationError('Price must be greater than 0')
+
+    def save(self, *args, **kwargs):
+        self.clean()  # Call the clean method before saving
+        super().save(*args, **kwargs)
 
 class Vehicle(models.Model):
     fleet = models.ForeignKey(Asset, to_field='asset_number', on_delete=models.CASCADE, related_name='fleet', limit_choices_to={'asset_type': 'vehicle'})
