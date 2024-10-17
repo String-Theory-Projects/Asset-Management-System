@@ -26,11 +26,13 @@ def get_system_user_token():
     return str(refresh.access_token)
 
 class ControlAssetView(APIView):
-    permission_classes = [AllowAny]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        # self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+        self.mqtt_client = mqtt.Client()
         self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT)
 
     def post(self, request, *args, **kwargs):
@@ -97,7 +99,7 @@ class ControlAssetView(APIView):
                 event_type=action_type,
                 data=data,
                 timestamp=timezone.now(),
-                content_type=ContentType.objects.get_for_model('room' if asset.asset_type == 'hotel' else 'vehicle'),
+                content_type=ContentType.objects.get_for_model(room if asset.asset_type == 'hotel' else vehicle),
                 object_id=sub_asset_id
             )
 
