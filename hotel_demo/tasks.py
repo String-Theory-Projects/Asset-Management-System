@@ -10,13 +10,16 @@ DOMAIN = SYSTEM_USER_REQUEST_DOMAIN
 
 @shared_task
 def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data):
-    url = f'assets/{asset_number}/control/{sub_asset_number}'
+    url = f'{DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}'
+    headers = {
+        'Authorization': f'Bearer {get_system_user_token()}'
+    }
     payload = {
         'action_type': action_type,
         'data': data
     }
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
         logger.info(f"Expiry control request sent successfully: {url}")
     except requests.RequestException as e:
