@@ -1,13 +1,11 @@
 import json
 import logging
-import requests
 
 from django.db import transaction, IntegrityError
 from django.db.models import Q, F
 from django.http import HttpResponse
-from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
-from django.conf import settings
+from django.utils.datetime_safe import datetime
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
 
@@ -15,11 +13,9 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.filters import OrderingFilter
 
-from rave_python import Rave
-from rave_python.rave_misc import generateTransactionReference 
+from rave_python.rave_misc import generateTransactionReference
 
 from django.utils import timezone
 from datetime import timedelta
@@ -33,13 +29,9 @@ from core import *
 from .serializers import UserSerializer, TransactionSerializer
 from .models import User, Asset, HotelRoom, Transaction, Vehicle
 from .permissions import IsAdmin,IsManager
-from .tasks import schedule_sub_asset_expiry
-from mqtt_handler.views import get_system_user_token 
-
+from hotel_demo.tasks import schedule_sub_asset_expiry, send_control_request
 
 User = get_user_model()
-DOMAIN = 'http://localhost:8000'
-
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 # ---------- AUTH VIEWS ----------
@@ -243,7 +235,7 @@ class InitiatePaymentView(APIView):
                 hotel_room_sub_assets = HotelRoom.objects.filter(room_number=sub_asset_number).first()
 
                 if not vehicle_sub_assets and not hotel_room_sub_assets:
-                    raise ValueError("No sub-assets found for the given asset number.")
+                    raise ValueError("No sub-assets found for the given sub-asset number.")
 
         except KeyError as e:
             return Response({"error": f"Missing required field: {e.args[0]}"}, status=status.HTTP_400_BAD_REQUEST)
@@ -287,7 +279,7 @@ class InitiatePaymentView(APIView):
                     )
                 return Response({
                     "payment_link": payment_link,
-                    "transaction_id": transaction_obj.id
+                    "transaction_ref": tx_ref
                 }, status=status.HTTP_200_OK)
             except Asset.DoesNotExist:
                 return Response({"error": "Invalid asset number"}, status=status.HTTP_400_BAD_REQUEST)
@@ -298,10 +290,8 @@ class InitiatePaymentView(APIView):
         
 class VerifyPaymentView(APIView):
     permission_classes = [AllowAny]
-
     def get(self, request):
-        tx_ref = request.GET.get('tx_ref')
-
+        tx_ref = request.GET.get('trxref')
         if not tx_ref:
             return Response({"error": "Missing required parameters"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -379,7 +369,7 @@ class VerifyPaymentView(APIView):
                 room.activation_timestamp = current_time
                 new_expiry = current_time + timedelta(minutes=duration_days)
 
-            self.send_control_request(asset.asset_number, sub_asset_number, "access", "unlock")
+            send_control_request.apply_async(args=[asset.asset_number, sub_asset_number, "access", "unlock"], eta=datetime.now())
             room.status = True
             room.expiry_timestamp = new_expiry
             room.save()
@@ -403,7 +393,7 @@ class VerifyPaymentView(APIView):
                 # Vehicle is not active or has expired, set new activation and expiry
                 vehicle.activation_timestamp = current_time
                 new_expiry = current_time + timedelta(days=duration_days)
-            self.send_control_request(asset.asset_number, sub_asset_number, "ignition", "turn_on")
+            send_control_request(asset.asset_number, sub_asset_number, "ignition", "turn_on")
 
             vehicle.status = True
             vehicle.expiry_timestamp = new_expiry
@@ -418,21 +408,6 @@ class VerifyPaymentView(APIView):
         else:
             logger.warning(f"Unsupported asset type: {asset.asset_type}")
 
-    def send_control_request(self, asset_number, sub_asset_number, action_type, data):
-        url = f'{DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
-        headers = {
-            'Authorization': f'Bearer {get_system_user_token()}'
-        }
-        payload = {
-            'action_type': action_type,
-            'data': data
-        }
-        try:
-            response = requests.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            logger.info(f"Control request sent successfully: {url}")
-        except Exception as e:
-            logger.error(f"Failed to send control request: {str(e)}")
 
 class TransactionPagination(PageNumberPagination):
     page_size = 10

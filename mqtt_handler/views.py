@@ -6,7 +6,7 @@ from core.models import Asset, AssetEvent, HotelRoom, Vehicle
 from django.utils import timezone
 from datetime import timedelta
 from django.contrib.contenttypes.models import ContentType
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -24,8 +24,7 @@ def get_system_user_token():
     return str(refresh.access_token)
 
 class ControlAssetView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
