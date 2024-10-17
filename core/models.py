@@ -67,8 +67,23 @@ class Asset(models.Model):
         user = kwargs.pop('user', None)
         if not self.asset_number and user:
             user_id = str(user.id).zfill(4)
-            asset_count = Asset.objects.filter(roles__user=user).count() + 1
+            
+            # Get the last asset where the user's role is admin
+            last_admin_asset = Asset.objects.filter(
+                roles__user=user, 
+                roles__role='admin'
+            ).order_by('-asset_number').first()
+
+            if last_admin_asset:
+                # Extract the last three digits and increment
+                last_count = int(last_admin_asset.asset_number[-3:])
+                asset_count = last_count + 1
+            else:
+                # If no previous admin assets, start with 1
+                asset_count = 1
+
             self.asset_number = f"TAS-{user_id}-{str(asset_count).zfill(3)}"
+        
         super().save(*args, **kwargs)
 
     def __str__(self):
