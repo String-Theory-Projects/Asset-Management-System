@@ -9,6 +9,7 @@ from django.contrib.contenttypes.models import ContentType
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
+import logging
 from rest_framework_simplejwt.authentication import JWTAuthentication
 # import settings
 from django.conf import settings
@@ -17,6 +18,7 @@ MQTT_BROKER = 'broker.emqx.io'  # Replace with your MQTT broker address
 MQTT_PORT = 1883  # Default MQTT port
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 def get_system_user_token():
     system_user = User.objects.get(username='info@trykey.com')
@@ -95,7 +97,7 @@ class ControlAssetView(APIView):
                 event_type=action_type,
                 data=data,
                 timestamp=timezone.now(),
-                content_type=ContentType.objects.get_for_model(room if asset.asset_type == 'hotel' else vehicle),
+                content_type=ContentType.objects.get_for_model('room' if asset.asset_type == 'hotel' else 'vehicle'),
                 object_id=sub_asset_id
             )
 

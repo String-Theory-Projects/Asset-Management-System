@@ -393,8 +393,7 @@ class VerifyPaymentView(APIView):
                 # Vehicle is not active or has expired, set new activation and expiry
                 vehicle.activation_timestamp = current_time
                 new_expiry = current_time + timedelta(days=duration_days)
-            send_control_request(asset.asset_number, sub_asset_number, "ignition", "turn_on")
-
+            send_control_request.apply_async(args=[asset.asset_number, sub_asset_number, "ignition", "turn_on"], eta=datetime.now())
             vehicle.status = True
             vehicle.expiry_timestamp = new_expiry
             vehicle.save()

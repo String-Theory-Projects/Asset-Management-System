@@ -22,6 +22,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
+
+# system domain
+DOMAIN = os.getenv('SYSTEM_USER_REQUEST_DOMAIN', 'localhost:8000')
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
 
@@ -35,11 +39,11 @@ FLW_SECRET_HASH = os.getenv('FLW_SECRET_HASH', '')
 
 # Paystack keys
 PAYSTACK_SECRET_KEY = os.getenv('PAYSTACK_SECRET_KEY')
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'dashboard.trykeyprotocol.com']
+ALLOWED_HOSTS = [i for i in {DOMAIN, 'dashboard.trykeyprotocol.com'}]
+
 
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:8000',
-    'http://127.0.0.1:8000',
+    DOMAIN,
     'chrome-extension://amknoiejhlmhancpahfcfcfhllgkpbld'
 ]
 
@@ -48,8 +52,7 @@ AUTH_USER_MODEL = 'core.User'
 CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "https://your-frontend-domain.com",
+    DOMAIN,
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -183,7 +186,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'Etc/GMT+1'
+TIME_ZONE = 'Africa/Lagos'
 
 USE_I18N = True
 
