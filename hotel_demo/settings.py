@@ -51,11 +51,12 @@ CSRF_TRUSTED_ORIGINS = [
 
 AUTH_USER_MODEL = 'core.User'
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 
 CORS_ALLOWED_ORIGINS = [
     f"http://{DOMAIN}",
     f"https://{DOMAIN}",
+    "https://company-website-mnmk-c7ma2a3cm-trykey-protocols-projects.vercel.app"
 ]
 
 CORS_ALLOW_CREDENTIALS = True

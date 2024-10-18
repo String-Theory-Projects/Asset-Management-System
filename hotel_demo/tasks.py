@@ -15,7 +15,7 @@ logger.setLevel(logging.INFO)
 @shared_task
 def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data):
     logger.info(f"Expiry task started for asset {asset_number}, sub-asset {sub_asset_number}")
-    url = f'{settings.DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
+    url = f'https://{settings.DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
     headers = {
         'Authorization': f'Bearer {get_system_user_token()}'
     }
@@ -50,7 +50,7 @@ def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data)
 
 @shared_task()
 def send_control_request(asset_number, sub_asset_number, action_type, data):
-    url = f'{settings.DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
+    url = f'https://{settings.DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
     headers = {
         'Authorization': f'Bearer {get_system_user_token()}',
         'Content-Type': 'application/json'
