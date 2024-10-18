@@ -8,11 +8,11 @@ gunicorn hotel_demo.wsgi:application \
     --error-logfile=- \
     --capture-output &
 
-# Start Celery worker as appuser
-celery -A hotel_demo worker --uid=appuser --gid=appuser --loglevel=info &
+# Start Celery worker (without specifying uid/gid)
+celery -A hotel_demo worker --loglevel=info &
 
-# Start Celery beat (if you're using periodic tasks) as appuser
-celery -A hotel_demo beat --uid=appuser --gid=appuser --loglevel=info &
+# Start Celery beat (if you're using periodic tasks, without specifying uid/gid)
+celery -A hotel_demo beat --loglevel=info &
 
 # Wait for any process to exit
 wait -n
