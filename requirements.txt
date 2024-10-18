@@ -1,7 +1,7 @@
 amqp==5.2.0
 asgiref==3.8.1
 async-timeout==4.0.3
-backports.zoneinfo==0.2.1
+backports.zoneinfo==0.2.1;python_version<"3.9"
 billiard==4.2.1
 celery==5.4.0
 certifi==2024.8.30
