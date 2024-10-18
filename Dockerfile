@@ -10,33 +10,24 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    netcat-openbsd \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt /app/
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy entrypoint script
-COPY entrypoint.sh /app/
-
 # Copy project
 COPY . /app/
 
 # Create a non-root user
-RUN useradd -ms /bin/bash appuser
+RUN groupadd -r celery && useradd -r -g celery celery -u 1000
 
-# Create the run directory for the socket
-RUN mkdir /run/daphne && chown appuser:appuser /run/daphne
-
-# Change ownership of the app directory
-RUN chown -R appuser:appuser /app
-
-# Make the entrypoint script executable
-RUN chmod +x /app/entrypoint.sh
+# Change ownership of the app directory to the non-root user
+RUN chown -R celery:celery /app
 
 # Switch to non-root user
-USER appuser
+USER celery
 
-# Run entrypoint.sh
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Run Celery worker
+CMD ["celery", "-A", "hotel_demo", "worker", "--loglevel=info"]
