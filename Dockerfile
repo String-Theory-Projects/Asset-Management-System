@@ -17,6 +17,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt /app/
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
+# Copy entrypoint script
+COPY entrypoint.sh /app/
+
 # Copy project
 COPY . /app/
 
@@ -29,11 +32,11 @@ RUN mkdir /run/daphne && chown appuser:appuser /run/daphne
 # Change ownership of the app directory
 RUN chown -R appuser:appuser /app
 
-# Switch to non-root user
-USER appuser
-
 # Make the entrypoint script executable
 RUN chmod +x /app/entrypoint.sh
+
+# Switch to non-root user
+USER appuser
 
 # Run entrypoint.sh
 ENTRYPOINT ["/app/entrypoint.sh"]
