@@ -30,4 +30,4 @@ RUN chown -R celery:celery /app
 USER celery
 
 # Run Celery worker with explicit UID and GID
-CMD ["celery", "-A", "your_project_name", "worker", "--uid=1000", "--gid=1000", "--loglevel=info"]
+CMD ["celery", "-A", "hotel_demo", "worker", "--uid=1000", "--gid=1000", "--loglevel=info"]
