@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.9
+FROM python:3.9-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
@@ -29,5 +29,5 @@ RUN chown -R celery:celery /app
 # Switch to non-root user
 USER celery
 
-# Run Celery worker
-CMD ["celery", "-A", "hotel_demo", "worker", "--loglevel=info"]
+# Run Celery worker with explicit UID and GID
+CMD ["celery", "-A", "your_project_name", "worker", "--uid=1000", "--gid=1000", "--loglevel=info"]
