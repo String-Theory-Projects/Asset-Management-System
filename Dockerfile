@@ -17,9 +17,6 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt /app/
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy entrypoint script
-COPY entrypoint.sh /app/
-
 # Copy project
 COPY . /app/
 
