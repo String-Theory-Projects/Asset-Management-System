@@ -11,6 +11,15 @@ import sendgrid
 from sendgrid.helpers.mail import *
 
 from rest_framework.pagination import PageNumberPagination
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+
+def get_system_user_token():
+    system_user = User.objects.get(username='info@trykey.com')
+    refresh = RefreshToken.for_user(system_user)
+    return str(refresh.access_token)
 
 
 # ----------- Data helpers -------------
