@@ -33,7 +33,7 @@ def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data,
         # Update room status directly in the task
         try:
             asset = Asset.objects.get(asset_number=asset_number)
-            if asset.asset_type == 'hotel':
+            if asset.asset_type == 'hotel' and update_status:
                 room = HotelRoom.objects.get(hotel=asset, room_number=sub_asset_number)
                 room.status = False
                 room.save()
