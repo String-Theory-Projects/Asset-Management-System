@@ -13,7 +13,7 @@ logger.setLevel(logging.INFO)
 
 
 @shared_task
-def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data):
+def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data, update_status):
     logger.info(f"Expiry task started for asset {asset_number}, sub-asset {sub_asset_number}")
     url = f'{settings.DOMAIN}/api/assets/{asset_number}/control/{sub_asset_number}/'
     headers = {
@@ -22,7 +22,7 @@ def schedule_sub_asset_expiry(asset_number, sub_asset_number, action_type, data)
     payload = {
         'action_type': action_type,
         'data': data,
-        'update_status': True  # Add this flag to indicate status update is needed (currently only handles sub-asset deactivation)
+        'update_status': update_status  # Add this flag to indicate status update is needed (currently only handles sub-asset deactivation)
     }
     try:
         response = requests.post(url, json=payload, headers=headers)

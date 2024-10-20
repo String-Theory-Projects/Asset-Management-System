@@ -383,7 +383,7 @@ class VerifyPaymentView(APIView):
             
             # Cancel any existing expiry task and schedule a new one
             schedule_sub_asset_expiry.apply_async(
-                args=[asset.asset_number, sub_asset_number, "access", "lock"],
+                args=[asset.asset_number, sub_asset_number, "access", "lock", True],
                 eta=new_expiry
             )
             
@@ -406,7 +406,7 @@ class VerifyPaymentView(APIView):
             vehicle.save()
             # Cancel any existing expiry task and schedule a new one
             schedule_sub_asset_expiry.apply_async(
-                args=[asset.asset_number, sub_asset_number, "ignition", "turn_off"],
+                args=[asset.asset_number, sub_asset_number, "ignition", "turn_off", True],
                 eta=new_expiry
             )
             logger.info(f"Updated Vehicle {vehicle.vehicle_number} status and timestamps. New expiry: {new_expiry}")
