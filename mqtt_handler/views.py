@@ -9,6 +9,7 @@ from django.db.models import Sum
 from django.contrib.contenttypes.models import ContentType
 
 from core.models import Asset, AssetEvent, HotelRoom, Vehicle
+from core.permissions import IsAdmin, IsManager
 from hotel_demo.tasks import send_control_request, schedule_sub_asset_expiry
 
 import logging
@@ -360,7 +361,10 @@ class CheckAssetStatusView(APIView):
             'daily_stats': daily_stats
         })
 
+
 class DirectControlView(APIView):
+    permission_classes = [IsAuthenticated & (IsAdmin | IsManager)]
+
     def post(self, request, *args, **kwargs):
         asset_number = kwargs.get('asset_number')
         sub_asset_id = kwargs.get('sub_asset_id')
@@ -384,11 +388,12 @@ class DirectControlView(APIView):
 
         # Schedule sub_asset_expiry
         current_time = timezone.now()
-        if settings.DEBUG is True:
+        if settings.DEBUG:
             expiry_time = current_time + timedelta(hours=settings.DIRECT_CONTROL_EXPIRY)
         else:    
             expiry_time = current_time + timedelta(seconds=settings.DIRECT_CONTROL_EXPIRY)
 
+        expiry_data = None
         # Set expiry for hotel
         if asset.asset_type == 'hotel':
             expiry_data = 'lock' if data == 'unlock' else 'unlock'
