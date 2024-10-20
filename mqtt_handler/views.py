@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from core.models import Asset, AssetEvent, HotelRoom, Vehicle
 from django.utils import timezone
+from django.db.models import Sum
 from datetime import timedelta
 from django.contrib.contenttypes.models import ContentType
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -13,6 +14,8 @@ import logging
 from rest_framework_simplejwt.authentication import JWTAuthentication
 # import settings
 from django.conf import settings
+
+
 # Configure the MQTT client
 MQTT_BROKER = 'broker.emqx.io'  # Replace with your MQTT broker address
 MQTT_PORT = 1883  # Default MQTT port
@@ -254,12 +257,20 @@ class CheckAssetStatusView(APIView):
             status=True
         ).count()
 
-        total_occupied_rooms = AssetEvent.objects.filter(
+        occupied_rooms = AssetEvent.objects.filter(
             asset=asset,
             event_type='occupancy',
             timestamp__date=current_date,
-            data='occupied'
-        ).values('object_id').distinct().count()
+            data='1'
+        ).values('object_id').distinct()
+
+        total_occupied_rooms = occupied_rooms.count()
+
+        # Calculate expected yield
+        expected_yield = HotelRoom.objects.filter(
+            hotel=asset,
+            room_number__in=occupied_rooms.values_list('object_id', flat=True)
+        ).aggregate(total_price=Sum('price'))['total_price'] or 0
 
         # Get daily stats
         daily_stats = []
@@ -271,18 +282,26 @@ class CheckAssetStatusView(APIView):
                 event_type='occupancy',
                 timestamp__lt=next_date,
                 timestamp__gte=current_date,
-                data='occupied'
-            ).values('object_id').distinct().count()
+                data='1'
+            ).values('object_id').distinct()
+
+            daily_occupied_count = occupied_rooms.count()
 
             active_rooms = HotelRoom.objects.filter(
                 hotel=asset,
                 status=True
             ).count()
 
+            daily_expected_yield = HotelRoom.objects.filter(
+                hotel=asset,
+                room_number__in=occupied_rooms.values_list('object_id', flat=True)
+            ).aggregate(total_price=Sum('price'))['total_price'] or 0
+
             daily_stats.append({
                 'date': current_date.date(),
-                'occupied_rooms': occupied_rooms,
-                'active_rooms': active_rooms
+                'occupied_rooms': daily_occupied_count,
+                'active_rooms': active_rooms,
+                'expected_yield': daily_expected_yield
             })
             current_date = next_date
 
@@ -290,6 +309,7 @@ class CheckAssetStatusView(APIView):
             'total_rooms': total_rooms,
             'total_active_rooms': total_active_rooms,
             'total_occupied_rooms': total_occupied_rooms,
+            'expected_yield': expected_yield,
             'daily_stats': daily_stats
         })
 
