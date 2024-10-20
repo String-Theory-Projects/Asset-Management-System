@@ -383,6 +383,20 @@ class DirectControlView(APIView):
                 'error': 'Asset not found'
             }, status=status.HTTP_404_NOT_FOUND)
 
+        # TODO: Check if the room is occupied
+        # if asset.asset_type == 'hotel':
+        #     latest_occupancy = AssetEvent.objects.filter(
+        #         asset=asset,
+        #         event_type='occupancy',
+        #         object_id=sub_asset_id,
+        #         content_type=ContentType.objects.get_for_model(asset)
+        #     ).order_by('-timestamp').first()
+
+        #     if latest_occupancy and latest_occupancy.data == '1':
+        #         return Response({
+        #             'error': 'Room is currently occupied. Cannot perform direct control.'
+        #         }, status=status.HTTP_400_BAD_REQUEST)
+
         # Call send_control_request asynchronously
         send_control_request.delay(asset_number, sub_asset_id, action_type, data)
 
