@@ -1,17 +1,20 @@
-import paho.mqtt.client as mqtt
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.models import Asset, AssetEvent, HotelRoom, Vehicle
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated, AllowAny
+
 from django.utils import timezone
 from django.db.models import Sum
-from datetime import timedelta
 from django.contrib.contenttypes.models import ContentType
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth import get_user_model
+
+from core.models import Asset, AssetEvent, HotelRoom, Vehicle
+from hotel_demo.tasks import send_control_request, schedule_sub_asset_expiry
+
 import logging
-from rest_framework_simplejwt.authentication import JWTAuthentication
+from datetime import timedelta
+import paho.mqtt.client as mqtt
+
 # import settings
 from django.conf import settings
 
@@ -20,13 +23,9 @@ from django.conf import settings
 MQTT_BROKER = 'broker.emqx.io'  # Replace with your MQTT broker address
 MQTT_PORT = 1883  # Default MQTT port
 
-User = get_user_model()
+
 logger = logging.getLogger(__name__)
 
-def get_system_user_token():
-    system_user = User.objects.get(username='info@trykey.com')
-    refresh = RefreshToken.for_user(system_user)
-    return str(refresh.access_token)
 
 class ControlAssetView(APIView):
     authentication_classes = [JWTAuthentication]
@@ -360,3 +359,50 @@ class CheckAssetStatusView(APIView):
             'total_in_use_vehicles': total_in_use_vehicles,
             'daily_stats': daily_stats
         })
+
+class DirectControlView(APIView):
+    def post(self, request, *args, **kwargs):
+        asset_number = kwargs.get('asset_number')
+        sub_asset_id = kwargs.get('sub_asset_id')
+        action_type = request.data.get('action_type')
+        data = request.data.get('data')
+
+        if not all([asset_number, sub_asset_id, action_type, data]):
+            return Response({
+                'error': 'Missing required parameters'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            asset = Asset.objects.get(asset_number=asset_number)
+        except Asset.DoesNotExist:
+            return Response({
+                'error': 'Asset not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Call send_control_request asynchronously
+        send_control_request.delay(asset_number, sub_asset_id, action_type, data)
+
+        # Schedule sub_asset_expiry
+        current_time = timezone.now()
+        if settings.DEBUG is True:
+            expiry_time = current_time + timedelta(hours=settings.DIRECT_CONTROL_EXPIRY)
+        else:    
+            expiry_time = current_time + timedelta(seconds=settings.DIRECT_CONTROL_EXPIRY)
+
+        # Set expiry for hotel
+        if asset.asset_type == 'hotel':
+            expiry_data = 'lock' if data == 'unlock' else 'unlock'
+            schedule_sub_asset_expiry.apply_async(
+                args=[asset_number, sub_asset_id, "access", expiry_data],
+                eta=expiry_time
+            )
+
+        return Response({
+            'message': 'Control request sent and expiry scheduled',
+            'asset_number': asset_number,
+            'sub_asset_id': sub_asset_id,
+            'action_type': action_type,
+            'expiry_time': expiry_time,
+            'expiry_action_type': "access" if asset.asset_type == 'hotel' else None,
+            'expiry_data': expiry_data
+        }, status=status.HTTP_202_ACCEPTED)
