@@ -23,6 +23,7 @@ import math
 
 from utils.helpers import *
 from utils.payment import initiate_paystack_payment, verify_paystack_payment
+from django.conf import settings
 
 from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
 from core import *
@@ -363,12 +364,18 @@ class VerifyPaymentView(APIView):
 
             if room.status and room.expiry_timestamp > current_time:
                 # Room is already active, extend the expiry
-                new_expiry = room.expiry_timestamp + timedelta(minutes=duration_days)
+                if settings.DEBUG is True:
+                    new_expiry = room.expiry_timestamp + timedelta(minutes=duration_days)
+                else:
+                    new_expiry = room.expiry_timestamp + timedelta(days=duration_days)
             else:
                 # Room is not active or has expired, set new activation and expiry
                 room.activation_timestamp = current_time
-                new_expiry = current_time + timedelta(minutes=duration_days)
-
+                if settings.DEBUG is True:
+                    new_expiry = current_time + timedelta(minutes=duration_days)
+                else:
+                    new_expiry = current_time + timedelta(days=duration_days)
+            
             send_control_request.apply_async(args=[asset.asset_number, sub_asset_number, "access", "unlock"])
             room.status = True
             room.expiry_timestamp = new_expiry
