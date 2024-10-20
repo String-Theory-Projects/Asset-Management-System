@@ -15,14 +15,12 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.filters import OrderingFilter
 
-from rave_python.rave_misc import generateTransactionReference
-
 from django.utils import timezone
 from datetime import timedelta
 import math
 
 from utils.helpers import *
-from utils.payment import initiate_paystack_payment, verify_paystack_payment
+from utils.payment import initiate_paystack_payment, verify_paystack_payment, generate_transaction_reference
 
 from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
 from core import *
@@ -195,7 +193,7 @@ class UserDataView(APIView):
 class InitiatePaymentView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):
-        tx_ref = generateTransactionReference(tref_pref)
+        tx_ref = generate_transaction_reference(tref_pref)
 
         try:
             # Validate and retrieve fields
@@ -408,11 +406,6 @@ class VerifyPaymentView(APIView):
             logger.warning(f"Unsupported asset type: {asset.asset_type}")
 
 
-class TransactionPagination(PageNumberPagination):
-    page_size = 10
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
 class TransactionListView(APIView):
     pagination_class = TransactionPagination
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -478,3 +471,18 @@ class TransactionListView(APIView):
     def get_paginated_response(self, data):
         assert self.paginator is not None
         return self.paginator.get_paginated_response(data)
+
+
+class Withdraw(APIView):
+    permission_classes = [IsAuthenticated, IsManager]
+    def post(self, request, *args, **kwargs):
+        pass
+
+    def initiate_transfer(self):
+        pass
+
+    def get_bank_details(self):
+        """ Gets the user's bank details from db if transfer is to own account """
+class PaystackConfirmationWebhook(APIView):
+    def post(self, request, *args, **kwargs):
+        pass

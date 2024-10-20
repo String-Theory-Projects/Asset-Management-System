@@ -1,6 +1,8 @@
 import requests
 from django.conf import settings
 from rest_framework import status
+import random
+import string
 
 import logging
 
@@ -79,3 +81,12 @@ def verify_paystack_payment(transaction_ref):
         return None, f"Connection error: {str(e)}"
     except ValueError:  # Includes JSONDecodeError
         return None, "Invalid response from Flutterwave"
+
+
+def generate_transaction_reference(tref_pref):
+    """
+    Generates the transaction reference given a prefix
+    """
+    alphabet = string.ascii_uppercase + string.digits + string.ascii_lowercase
+    ref = ''.join(random.choice(alphabet) for i in range(15))
+    return tref_pref + '-' + ref
