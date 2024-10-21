@@ -87,6 +87,6 @@ def generate_transaction_reference(tref_pref):
     """
     Generates the transaction reference given a prefix
     """
-    alphabet = string.ascii_uppercase + string.digits + string.ascii_lowercase
-    ref = ''.join(random.choice(alphabet) for i in range(15))
-    return tref_pref + '-' + ref
+    alphabet = string.digits + string.ascii_lowercase
+    ref = ''.join(random.choice(alphabet) + ('-' if i in {8, 12, 16, 20} else '') for i in range(1, 33))
+    return ref
