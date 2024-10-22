@@ -389,9 +389,9 @@ class DirectControlView(APIView):
         # Schedule sub_asset_expiry
         current_time = timezone.now()
         if settings.DEBUG:
-            expiry_time = current_time + timedelta(hours=settings.DIRECT_CONTROL_EXPIRY)
-        else:    
             expiry_time = current_time + timedelta(seconds=settings.DIRECT_CONTROL_EXPIRY)
+        else:    
+            expiry_time = current_time + timedelta(hours=settings.DIRECT_CONTROL_EXPIRY)
 
         expiry_data = None
         # Set expiry for hotel

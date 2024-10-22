@@ -34,7 +34,7 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
 # Duration for directly controlling sub asset (seconds if DEBUG else hours)
-DIRECT_CONTROL_EXPIRY = 2
+DIRECT_CONTROL_EXPIRY = os.getenv('PAYSTACK_SECRET_KEY_DEV', 2)
 
 # Flutterwave keys
 FLW_PUBLIC_KEY = os.getenv('FLW_PUBLIC_KEY')
