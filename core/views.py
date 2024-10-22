@@ -1,6 +1,9 @@
 import json
 import logging
 
+import hmac
+import hashlib
+
 from django.db import transaction, IntegrityError
 from django.db.models import Q, F
 from django.http import HttpResponse
@@ -566,7 +569,7 @@ class InitiateTransferView(APIView):
 
 
 
-class PaystackTransferConfirmationView(APIView):
+class PaystackWebhookView(APIView):
     """
     Webhook to handle events from Paystack such as transfer.success and transfer.failed.
     """
@@ -577,9 +580,15 @@ class PaystackTransferConfirmationView(APIView):
         signature = request.headers.get('x-paystack-signature')
 
         # Verify the signature to ensure it’s from Paystack
-        secret_key = 'YOUR_SECRET_KEY'
-        computed_signature = '' #TODO: CHANGE THIS TO THE ACTUAL COMPUTED SIGNATURE
+        secret_key = settings.SECRET_KEY
+
+        computed_signature = hmac.new(
+            bytes(secret_key, 'utf-8'),
+            msg=payload,
+            digestmod=hashlib.sha512
+        ).hexdigest()
         if computed_signature != signature:
+            logger.info("Attempted access to webhook failed: invalid signature")
             return Response({'error': 'Invalid signature'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -589,19 +598,20 @@ class PaystackTransferConfirmationView(APIView):
 
         # Handle different types of events (transfer.success, transfer.failed, etc.)
         event = event_data['event']
-
-        if event == 'transfer.success':
+        event_type, event_status = event.split('.')
+        if event_type == 'transfer':
             transfer_reference = event_data['data']['transfer_code']
-            # Find and update your transfer model in the DB
-            # Example: Transfer.objects.filter(reference=transfer_reference).update(status='success')
-            # You could add logging or further processing here if needed
-
-        elif event == 'transfer.failed':
-            transfer_reference = event_data['data']['transfer_code']
-            # Handle transfer failure, e.g., mark transfer as failed in the database
-
-        # Handle any other events if needed (e.g., transfer.reversed)
-
+            if event_status == 'pending':
+                pass
+            elif event_status == 'failed':
+                pass
+            elif event_status == 'success':
+                pass
+            else:
+                pass
+        else:
+            logger.info(f"Recieved non-transfer webhook: {event}")
+            return Response({'status': 'success'}, status=status.HTTP_200_OK)
         return Response({'status': 'success'}, status=status.HTTP_200_OK)
 
     def get(self, request, *args, **kwargs):
