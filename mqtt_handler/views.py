@@ -395,12 +395,12 @@ class DirectControlView(APIView):
 
         expiry_data = None
         # Set expiry for hotel
-        if asset.asset_type == 'hotel':
-            expiry_data = 'lock' if data == 'unlock' else 'unlock'
-            schedule_sub_asset_expiry.apply_async(
-                args=[asset_number, sub_asset_id, "access", expiry_data, False],
-                eta=expiry_time
-            )
+        # if asset.asset_type == 'hotel':
+        #     expiry_data = 'lock' if data == 'unlock' else 'unlock'
+        #     schedule_sub_asset_expiry.apply_async(
+        #         args=[asset_number, sub_asset_id, "access", expiry_data, False],
+        #         eta=expiry_time
+        #     )
 
         return Response({
             'message': 'Control request sent and expiry scheduled',
