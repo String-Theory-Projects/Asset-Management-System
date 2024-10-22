@@ -20,12 +20,11 @@ from datetime import timedelta
 import math
 
 from utils.helpers import *
-from utils.payment import initiate_paystack_payment, verify_paystack_payment, generate_transaction_reference
+from utils.payment import *
 
-from core import TRANSACTION_REFERENCE_PREFIX as tref_pref
 from core import *
 from .serializers import UserSerializer, TransactionSerializer
-from .models import User, Asset, HotelRoom, Transaction, Vehicle
+from .models import User, Asset, HotelRoom, Transaction, Vehicle, PaystackTransferRecipient
 from .permissions import IsAdmin,IsManager
 from hotel_demo.tasks import schedule_sub_asset_expiry, send_control_request
 
@@ -193,7 +192,7 @@ class UserDataView(APIView):
 class InitiatePaymentView(APIView):
     permission_classes = [AllowAny]
     def post(self, request):
-        tx_ref = generate_transaction_reference(tref_pref)
+        tx_ref = generate_transaction_reference()
 
         try:
             # Validate and retrieve fields
@@ -473,16 +472,137 @@ class TransactionListView(APIView):
         return self.paginator.get_paginated_response(data)
 
 
-class Withdraw(APIView):
-    permission_classes = [IsAuthenticated, IsManager]
-    def post(self, request, *args, **kwargs):
-        pass
 
-    def initiate_transfer(self):
-        pass
 
-    def get_bank_details(self):
-        """ Gets the user's bank details from db if transfer is to own account """
-class PaystackConfirmationWebhook(APIView):
+class InitiateTransferView(APIView):
+    permission_classes = [IsAuthenticated, IsAdmin]
+
     def post(self, request, *args, **kwargs):
-        pass
+        amount = request.data.get('amount')
+        bank_account_number = request.data.get('bank_account_number')
+        bank_code = request.data.get('bank_code')
+        bank_account_name = request.data.get('bank_account_name')
+
+        if not all([amount, bank_account_number, bank_code, bank_account_name]):
+            logger.error(
+                "Validation failed: missing required fields - Amount, recipient, asset number, or sub-asset number.")
+            return Response({"error": "Amount, recipient, asset number, and sub-asset number are required"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if transfer_policy_config['min_amount'] > amount or amount > transfer_policy_config['max_amount']:
+            logger.error(
+                f"Invalid transfer amount: {amount}. Must be between {transfer_policy_config['min_amount']} and {transfer_policy_config['max_amount']}.")
+            return Response({"error": f"Amount must be between {transfer_policy_config['min_amount']} and {transfer_policy_config['max_amount']}"},)
+
+        recipient =  self.get_paystack_recipient(bank_code, bank_account_number)
+        if recipient is None:
+            logger.info(f"Paystack recipient does not exist. Creating recipient with bank number {bank_account_number} for bank code {bank_code}")
+            success, message, recipient_data = create_paystack_recipient(User, bank_account_name, bank_account_number, bank_code)
+            if not success:
+                logger.error(f"Unable to create paystack recipient: {message}")
+                return Response({"error": "Unable to create paystack recipient."}, status=status.HTTP_400_BAD_REQUEST)
+            logger.info(f"Paystack recipient created successfully: {recipient_data}")
+            recipient = recipient_data['recipient_code']
+
+        success, message, response_data = initiate_paystack_transfer(amount, recipient)
+
+        if success:
+            # Create a pending transaction in the database
+            transaction = self.create_pending_transaction(amount, recipient)
+            transaction.save()
+            logger.info(f"Transaction object created successfully: {response_data}")
+            return Response(response_data, status=status.HTTP_200_OK)
+        else:
+            # If transfer initiation failed, mark the transaction as failed
+            logger.error(f"Failed to initiate paystack transfer: {message}")
+            return Response(f"Failed to initiate paystack transfer: {message}", status=status.HTTP_400_BAD_REQUEST)
+
+    def create_pending_transaction(self, amount, recipient):
+        trx_ref = generate_transaction_reference()
+        transaction = Transaction.objects.create(
+            name=f"Withdrawal to recipient_id:{recipient}",
+            amount=amount,
+            description=None,
+            asset=None,
+            sub_asset_number=None,
+            transaction_ref=trx_ref,
+            payment_status='pending',
+            payment_type='transfer',
+            is_outgoing=True
+        )
+        return transaction
+
+
+    def get_paystack_recipient(self, bank_code, bank_account_number):
+        """
+        Get the Paystack transfer recipient for the current user.
+        Returns None if the recipient doesn't exist or doesn't belong to the current user.
+        """
+        try:
+            recipient = PaystackTransferRecipient.objects.get(
+                user=self.request.user,
+                bank_account_number=bank_account_number,
+                bank_code=bank_code
+            )
+            return recipient.recipient_id
+        except PaystackTransferRecipient.DoesNotExist:
+            return None
+
+    def create_new_paystack_recipient(self, data):
+        status, recipient_data, message = create_paystack_recipient(
+            user=self.request.user,
+            name= data['bank_account_name'],
+            account_number=data['account_number'],
+            bank_code=data['bank_code'],
+            currency='NGN',
+            description=data['description'],
+        )
+        if status:
+            logger.info(f"PaystackTransferRecipient object created in the database for user {self.request.user}")
+            return recipient_data
+        else:
+            logger.error(f"Could not create paystack recipient. Error: {message}")
+            return None
+
+
+
+
+class PaystackTransferConfirmationView(APIView):
+    """
+    Webhook to handle events from Paystack such as transfer.success and transfer.failed.
+    """
+
+    def post(self, request, *args, **kwargs):
+        # Paystack sends the webhook data as a JSON payload
+        payload = request.body
+        signature = request.headers.get('x-paystack-signature')
+
+        # Verify the signature to ensure it’s from Paystack
+        secret_key = 'YOUR_SECRET_KEY'
+        computed_signature = '' #TODO: CHANGE THIS TO THE ACTUAL COMPUTED SIGNATURE
+        if computed_signature != signature:
+            return Response({'error': 'Invalid signature'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            event_data = json.loads(payload)
+        except ValueError:
+            return Response({'error': 'Invalid payload'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Handle different types of events (transfer.success, transfer.failed, etc.)
+        event = event_data['event']
+
+        if event == 'transfer.success':
+            transfer_reference = event_data['data']['transfer_code']
+            # Find and update your transfer model in the DB
+            # Example: Transfer.objects.filter(reference=transfer_reference).update(status='success')
+            # You could add logging or further processing here if needed
+
+        elif event == 'transfer.failed':
+            transfer_reference = event_data['data']['transfer_code']
+            # Handle transfer failure, e.g., mark transfer as failed in the database
+
+        # Handle any other events if needed (e.g., transfer.reversed)
+
+        return Response({'status': 'success'}, status=status.HTTP_200_OK)
+
+    def get(self, request, *args, **kwargs):
+        return Response({'error': 'GET method not allowed'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)

@@ -15,4 +15,4 @@ EVENT_TYPE_CHOICES = [(event[0], event[1]) for event in conf['core']['event_type
 
 
 # ------------- views.py variables -----------------
-TRANSACTION_REFERENCE_PREFIX =  conf['core']['transaction_reference_prefix']
+transfer_policy_config =  conf['core']['transfer_policy_config']

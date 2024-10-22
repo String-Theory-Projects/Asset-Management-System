@@ -24,15 +24,15 @@ core:
   transaction_reference_prefix: TRYKEY
   frontend:
     payment_redirect_url: localhost:8000/confirm
-  transfers:
+  transfer_policy_config:
     min_amount: 50  # in naira
-    max_amount: 10000000  # in naira
+    max_amount: 10_000_000  # in naira
     bank_charges_ranges:
       - range: [0, 5000]  # [from_amount, to_amount]
         charge: 10  # price in naira
-      - range: [5000, 50000]
+      - range: [5_000, 50_000]
         charge: 25
-      - range: [50000, 99999999999]  # an arbitrarily large transfer amount representing inf
+      - range: [50_000, 100_000_000]  # an arbitrarily large transfer amount representing inf
         charge: 50
 
 
