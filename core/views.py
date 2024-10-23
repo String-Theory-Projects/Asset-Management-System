@@ -9,8 +9,10 @@ from django.db.models import Q, F
 from django.http import HttpResponse
 from django.contrib.auth import get_user_model
 from django.utils.datetime_safe import datetime
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from django.shortcuts import get_object_or_404
+
 
 from rest_framework import status
 from rest_framework.response import Response
@@ -411,7 +413,6 @@ class VerifyPaymentView(APIView):
         else:
             logger.warning(f"Unsupported asset type: {asset.asset_type}")
 
-
 class TransactionListView(APIView):
     pagination_class = TransactionPagination
     filter_backends = [DjangoFilterBackend, OrderingFilter]
@@ -602,7 +603,77 @@ class FinalizeTransferView(APIView):
     def post(self, request, *args, **kwargs):
         pass
 
+class PaystackTransferConfirmationView(APIView):
+    permission_classes = [AllowAny]
 
+    def post(self, request, *args, **kwargs):
+        """
+        Handle Paystack transfer confirmation webhook.
+        Validates that a pending transaction exists and is within the allowed confirmation window.
+
+        Expected request data:
+        {
+            "trxref": "transaction_reference"
+        }
+        """
+
+        trxref = request.data.get('trxref')
+        if not trxref:
+            error_msg = "No transaction reference provided"
+            logger.error(f"Transfer confirmation failed: {error_msg}")
+            return Response(
+                {"error": error_msg},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Get the transaction and check its status
+            transaction = Transaction.objects.get(transaction_ref=trxref)
+
+            # Calculate the expiry time for pending transactions
+            expiry_time = timezone.now() - timedelta(
+                seconds=transfer_policy_config['pending_transfer_expiry']
+            )
+
+            # Check if transaction is pending and within time window
+            if (transaction.payment_status == 'pending' and
+                    transaction.timestamp >= expiry_time):
+                logger.info(
+                    f"Valid pending transfer confirmation received for transaction: {trxref}"
+                )
+                return Response(status=status.HTTP_200_OK)
+
+            # Log different failure cases
+            if transaction.payment_status != 'pending':
+                logger.error(
+                    f"Transfer confirmation failed: Transaction {trxref} status is "
+                    f"{transaction.payment_status}, expected 'pending'"
+                )
+            else:
+                logger.error(
+                    f"Transfer confirmation failed: Transaction {trxref} has expired. "
+                    f"Created at {transaction.timestamp}, expiry time was {expiry_time}"
+                )
+
+            return Response(
+                {"error": "Invalid or expired transaction"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        except Transaction.DoesNotExist:
+            error_msg = f"Transaction with reference {trxref} not found"
+            logger.error(f"Transfer confirmation failed: {error_msg}")
+            return Response(
+                {"error": error_msg},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            error_msg = f"Unexpected error processing transfer confirmation: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return Response(
+                {"error": "Internal server error"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class PaystackWebhookView(APIView):
     """
