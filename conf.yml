@@ -34,6 +34,7 @@ core:
         charge: 25
       - range: [50_000, 100_000_000]  # an arbitrarily large transfer amount representing inf
         charge: 50
+    pending_transfer_expiry: 1200 # Only confirm transfers that are less than 20 minutes old
 
 
 assets:
