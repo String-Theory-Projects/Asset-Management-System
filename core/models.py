@@ -12,11 +12,15 @@ from core import * #import the global variables from conf
 
 
 class User(AbstractUser):
-    avatar = models.ImageField(upload_to='avatars/', default='default_avatars/default_avatar.png', blank=True, null=True)
-    account_number = models.CharField(max_length=10, blank=True, null=True)
-    bank = models.CharField(max_length=20, blank=True, null=True)
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=255, unique=True)
+    avatar = models.ImageField(upload_to='avatars/', default='default_avatars/default_avatar.png', blank=True, null=True)
+
+    bank_name = models.CharField(max_length=20, blank=True, null=True)
+    bank_code = models.IntegerField(blank=True, null=True)
+    bank_currency = models.CharField(max_length=20, blank=True, null=True, default='NGN')
+    bank_account_number = models.CharField(max_length=10, blank=True, null=True)
+    bank_account_name = models.CharField(max_length=30, blank=True, null=True)
 
     def save(self, *args, **kwargs):
         self.username = self.email
@@ -27,21 +31,25 @@ class User(AbstractUser):
 
 
 class Transaction(models.Model):
-    asset = models.ForeignKey('Asset', to_field='asset_number', related_name='transactions', on_delete=models.CASCADE)
-    sub_asset_number = models.CharField(max_length=10)
-    payment_status = models.CharField(max_length=10, choices=PAYMENT_STATUS_CHOICES)
-    payment_type = models.CharField(max_length=100, choices=[('card','Card'), ('transfer', 'Transfer'),('mobile_money', 'Mobile_money')])
-    amount = models.DecimalField(max_digits=15, decimal_places=2)
-    currency = models.CharField(max_length=3, default='NGN')
-    timestamp = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-    transaction_ref = models.CharField(max_length=255, unique=True)
-    processor_ref = models.CharField(max_length=255, null=True, blank=True)
     name = models.CharField(max_length=255)
     email = models.EmailField(null=True, blank=True)
-    is_outgoing = models.BooleanField(default=False)
+    amount = models.DecimalField(max_digits=15, decimal_places=2)
+    currency = models.CharField(max_length=3, default='NGN')
     description = models.TextField(null=True, blank=True)
+
+    asset = models.ForeignKey('Asset', to_field='asset_number', related_name='transactions', on_delete=models.CASCADE, null=True)
+    sub_asset_number = models.CharField(max_length=10, null=True)
+
+    transaction_ref = models.CharField(max_length=255, unique=True)
+    processor_ref = models.CharField(max_length=255, null=True, blank=True)
+    payment_status = models.CharField(max_length=10, choices=PAYMENT_STATUS_CHOICES)
+    payment_type = models.CharField(max_length=100, choices=[('card','Card'), ('transfer', 'Transfer'),('mobile_money', 'Mobile_money')])
+
+    is_outgoing = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
+
+    timestamp = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Payment {self.id} of {self.currency}{self.amount} by {self.name}"
@@ -52,6 +60,31 @@ class Transaction(models.Model):
             models.Index(fields=['payment_status']),
             models.Index(fields=['timestamp']),
         ]
+
+
+class PaystackTransferRecipient(models.Model):
+    # ForeignKey to the User model (many transfer recipients to one user)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='paystack_transfer_recipients')
+
+    # Recipient details from Paystack
+    recipient_code = models.CharField(max_length=63, unique=True)  # Unique ID from Paystack
+    bank_account_number = models.CharField(max_length=15)  # Bank account number
+    bank_code = models.CharField(max_length=15)  # Code of the recipient's bank
+    bank_name = models.CharField(max_length=32)
+    bank_account_name = models.CharField(max_length=127)  # The name of the bank account holder
+    currency = models.CharField(max_length=4, default='NGN')  # Default to Nigerian Naira (NGN)
+
+    # Optional fields for tracking creation and modification time
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.bank_account_name} - {self.bank_account_number}"
+
+    class Meta:
+        verbose_name = 'Transfer Recipient'
+        verbose_name_plural = 'Transfer Recipients'
+        unique_together = ['bank_account_number', 'bank_code']  # Ensure combination of account and bank is unique
 
 
 class Asset(models.Model):

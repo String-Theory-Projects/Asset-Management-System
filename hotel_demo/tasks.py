@@ -65,3 +65,26 @@ def send_control_request(asset_number, sub_asset_number, action_type, data):
         logger.info(f"Control request sent successfully: {url}")
     except Exception as e:
         logger.error(f"Failed to send control request: {str(e)}")
+
+
+# ----------- Email & sms helpers -------------
+@shared_task
+def send_user_email(**kwargs):
+    """Function that sends emails to users
+
+    Args: receiver_email: str , message_details:{}
+    Return: None
+    """
+
+    pass
+
+
+@shared_task
+def send_user_sms(**kwargs):
+    """Function that sends SMS messages to users
+
+    Args: receiver_number: str , message_details:{}
+    Return: None
+    """
+
+    pass

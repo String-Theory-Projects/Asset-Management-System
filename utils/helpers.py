@@ -61,26 +61,6 @@ def validate_field(data, field_name: str, expected_types, required: bool = True,
     
     return value
 
-# ----------- Email & sms helpers -------------
-@shared_task
-def send_user_email(**kwargs):
-    """Function that sends emails to users
-    
-    Args: receiver_email: str , message_details:{}
-    Return: None
-    """
-    
-    pass
-
-@shared_task
-def send_user_sms(**kwargs):
-    """Function that sends SMS messages to users
-    
-    Args: receiver_number: str , message_details:{}
-    Return: None
-    """
-    
-    pass
 
 # ----------- API helpers -------------
 

@@ -62,8 +62,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [
     f"http://{DOMAIN}",
     f"https://{DOMAIN}",
-    "company-website-mnmk.vercel.app",
-    "trykeyprotocol.com",
+    "https://trykeyprotocol.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
