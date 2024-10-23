@@ -37,8 +37,8 @@ class Transaction(models.Model):
     currency = models.CharField(max_length=3, default='NGN')
     description = models.TextField(null=True, blank=True)
 
-    asset = models.ForeignKey('Asset', to_field='asset_number', related_name='transactions', on_delete=models.CASCADE)
-    sub_asset_number = models.CharField(max_length=10)
+    asset = models.ForeignKey('Asset', to_field='asset_number', related_name='transactions', on_delete=models.CASCADE, null=True)
+    sub_asset_number = models.CharField(max_length=10, null=True)
 
     transaction_ref = models.CharField(max_length=255, unique=True)
     processor_ref = models.CharField(max_length=255, null=True, blank=True)
@@ -67,8 +67,8 @@ class PaystackTransferRecipient(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='paystack_transfer_recipients')
 
     # Recipient details from Paystack
-    recipient_id = models.CharField(max_length=63, unique=True)  # Unique ID from Paystack
-    account_number = models.CharField(max_length=15)  # Bank account number
+    recipient_code = models.CharField(max_length=63, unique=True)  # Unique ID from Paystack
+    bank_account_number = models.CharField(max_length=15)  # Bank account number
     bank_code = models.CharField(max_length=15)  # Code of the recipient's bank
     bank_name = models.CharField(max_length=32)
     bank_account_name = models.CharField(max_length=127)  # The name of the bank account holder
@@ -79,12 +79,12 @@ class PaystackTransferRecipient(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.bank_account_name} - {self.account_number}"
+        return f"{self.bank_account_name} - {self.bank_account_number}"
 
     class Meta:
         verbose_name = 'Transfer Recipient'
         verbose_name_plural = 'Transfer Recipients'
-        unique_together = ['account_number', 'bank_code']  # Ensure combination of account and bank is unique
+        unique_together = ['bank_account_number', 'bank_code']  # Ensure combination of account and bank is unique
 
 
 class Asset(models.Model):

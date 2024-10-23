@@ -9,7 +9,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from decimal import Decimal
-from ..models import Asset, AssetEvent, Role, Transaction, Vehicle, HotelRoom, User
+from ..models import *
 
 from unittest.mock import patch, Mock
 
@@ -577,3 +577,59 @@ class VerifyPaymentViewTests(TestCase):
             # response = self.client.get(self.url, {'tx_ref': 'non_existent_ref'})
             # self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
             # self.assertIn('Transaction non_existent_ref not found in database', cm.output[0]) #TODO: reinstate this test once logging is set up
+
+
+class InitiateTransferViewTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.url = reverse('initiate_transfer')
+
+        user = User.objects.create(
+            username='admin@trykey.com',
+            email='admin@trykey.com',
+            password='admin',
+            is_superuser=True
+        )
+        user.save()
+
+        # create new paystack recipient
+        paystack_recipient = PaystackTransferRecipient.objects.create(
+            user=user,
+            recipient_id='mock_paystack_recipient_id',
+            account_number='1234567890',
+            bank_code='1234',
+            bank_name='GT Bank',
+            bank_account_name='John Spyrogyra Roberts',
+            currency='NGN'
+        )
+        paystack_recipient.save()
+
+        successful_transfer_initiation_response = {
+            "status": True,
+            "message": "Transfer has been initiated.",
+            "data": {
+                "integration": 100073,
+                "domain": "test",
+                "amount": 3794800,
+                "currency": "NGN",
+                "source": "balance",
+                "reason": "Calm down",
+                "recipient": 1,
+                "status": "pending",
+                "transfer_code": "TRF_1ptvuv321ahaa7q",
+                "id": 14,
+                "createdAt": "2017-02-03T17:21:54.508Z",
+                "updatedAt": "2017-02-03T17:21:54.508Z"
+            }
+        }
+    @patch('core.views.initiate_paystack_transfer')
+    def test_successful_transfer_initiation(self, mock_initiate_transfer):
+        mock_initiate_transfer.return_value = (
+        {'message': 'Verification successful', 'amount': '5000.00', 'currency': 'NGN'}, None)
+        response = self.client.get(self.url, {'trxref': 'tx_ref_completed'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['message'], "Payment verified successfully")
+
+        self.completed_transaction.refresh_from_db()
+        self.assertEqual(self.completed_transaction.payment_status, 'completed')
+        self.assertTrue(self.completed_transaction.is_verified)

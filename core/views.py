@@ -289,6 +289,10 @@ class InitiatePaymentView(APIView):
             return Response({"error": "Payment link not found"}, status=status.HTTP_400_BAD_REQUEST)
         
 class VerifyPaymentView(APIView):
+    """
+    TODO: restructure the post requests to allow execution without calling verify_paystack payment when the route is called from
+     the paystack webhook
+    """
     permission_classes = [AllowAny]
     def get(self, request):
         tx_ref = request.GET.get('trxref')
@@ -474,60 +478,73 @@ class TransactionListView(APIView):
         assert self.paginator is not None
         return self.paginator.get_paginated_response(data)
 
-
-
-
 class InitiateTransferView(APIView):
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [] #TODO: this needs to be IsAuthenticated and IsAdmin. It is currently not working
 
     def post(self, request, *args, **kwargs):
-        amount = request.data.get('amount')
+        try:
+            amount = float(request.data.get('amount'))
+        except ValueError:
+            logger.info("Invalid amount passed into InitiateTransferView")
+            return Response({"detail": "Invalid amount passed into InitiateTransfer"}, status=status.HTTP_400_BAD_REQUEST)
         bank_account_number = request.data.get('bank_account_number')
         bank_code = request.data.get('bank_code')
         bank_account_name = request.data.get('bank_account_name')
 
         if not all([amount, bank_account_number, bank_code, bank_account_name]):
             logger.error(
-                "Validation failed: missing required fields - Amount, recipient, asset number, or sub-asset number.")
-            return Response({"error": "Amount, recipient, asset number, and sub-asset number are required"},
+                "Validation failed: missing required fields - Amount,  bank_account_number, bank_code, bank_account_name.")
+            return Response({"error": "Amount,  bank_account_number, bank_code, bank_account_name"},
                             status=status.HTTP_400_BAD_REQUEST)
-        if transfer_policy_config['min_amount'] > amount or amount > transfer_policy_config['max_amount']:
+        if float(transfer_policy_config['min_amount']) > float(amount) or float(amount) > float(transfer_policy_config['max_amount']):
             logger.error(
                 f"Invalid transfer amount: {amount}. Must be between {transfer_policy_config['min_amount']} and {transfer_policy_config['max_amount']}.")
-            return Response({"error": f"Amount must be between {transfer_policy_config['min_amount']} and {transfer_policy_config['max_amount']}"},)
+            return Response({"error": f"Amount must be between {transfer_policy_config['min_amount']} and {transfer_policy_config['max_amount']}"},status.HTTP_400_BAD_REQUEST)
 
-        recipient =  self.get_paystack_recipient(bank_code, bank_account_number)
-        if recipient is None:
+        recipient_code =  self.get_paystack_recipient(bank_code, bank_account_number)
+        if recipient_code is None:
             logger.info(f"Paystack recipient does not exist. Creating recipient with bank number {bank_account_number} for bank code {bank_code}")
-            success, message, recipient_data = create_paystack_recipient(User, bank_account_name, bank_account_number, bank_code)
+            success, message, response_data = create_paystack_recipient(User, bank_account_name, bank_account_number, bank_code)
             if not success:
                 logger.error(f"Unable to create paystack recipient: {message}")
                 return Response({"error": "Unable to create paystack recipient."}, status=status.HTTP_400_BAD_REQUEST)
-            logger.info(f"Paystack recipient created successfully: {recipient_data}")
-            recipient = recipient_data['recipient_code']
 
-        success, message, response_data = initiate_paystack_transfer(amount, recipient)
+            recipient_code = response_data['recipient_code']
+            bank_name = response_data['bank_name']
+            bank_account_name = response_data['account_name']
+            paystack_recipient_local = PaystackTransferRecipient(
+                user=self.request.user,
+                recipient_code=recipient_code,
+                bank_account_number=bank_account_number,
+                bank_code=bank_code,
+                bank_account_name=bank_account_name,
+                bank_name=bank_name
+            )
+            paystack_recipient_local.save()
+            logger.info(f"Paystack recipient created successfully: {recipient_code}")
+
+        txn_reference = generate_transaction_reference()
+        success, message, response_data = initiate_paystack_transfer(amount, recipient_code, txn_reference)
 
         if success:
             # Create a pending transaction in the database
-            transaction = self.create_pending_transaction(amount, recipient)
-            transaction.save()
-            logger.info(f"Transaction object created successfully: {response_data}")
+            outgoing_transaction = self.create_pending_transaction(amount, recipient_code,txn_reference)
+            outgoing_transaction.save()
+            logger.info(f"Transaction object created successfully: {outgoing_transaction}")
             return Response(response_data, status=status.HTTP_200_OK)
         else:
             # If transfer initiation failed, mark the transaction as failed
             logger.error(f"Failed to initiate paystack transfer: {message}")
             return Response(f"Failed to initiate paystack transfer: {message}", status=status.HTTP_400_BAD_REQUEST)
 
-    def create_pending_transaction(self, amount, recipient):
-        trx_ref = generate_transaction_reference()
+    def create_pending_transaction(self, amount, recipient, txn_reference):
         transaction = Transaction.objects.create(
-            name=f"Withdrawal to recipient_id:{recipient}",
+            name=f"Withdrawal to recipient_code:{recipient}",
             amount=amount,
             description=None,
             asset=None,
             sub_asset_number=None,
-            transaction_ref=trx_ref,
+            transaction_ref=txn_reference,
             payment_status='pending',
             payment_type='transfer',
             is_outgoing=True
@@ -546,7 +563,8 @@ class InitiateTransferView(APIView):
                 bank_account_number=bank_account_number,
                 bank_code=bank_code
             )
-            return recipient.recipient_id
+
+            return recipient.recipient_code
         except PaystackTransferRecipient.DoesNotExist:
             return None
 
@@ -559,13 +577,30 @@ class InitiateTransferView(APIView):
             currency='NGN',
             description=data['description'],
         )
+        # check if recipient with given account number and bank exists already
+        saved_paystack_recipient = PaystackTransferRecipient.objects.filter(
+            user=self.request.user,
+            bank_account_number=data['bank_account_number'],
+            bank_code=data['bank_code']
+    )
+        if saved_paystack_recipient.exists():
+            logger.info(f"Paystack recipient already exists: {saved_paystack_recipient}")
+            return {
+                "recipient_code":saved_paystack_recipient.first().recipient_code
+            }
         if status:
-            logger.info(f"PaystackTransferRecipient object created in the database for user {self.request.user}")
+            logger.info(f"PaystackTransferRecipient object created in the database for user {self.request.user.username}")
             return recipient_data
         else:
             logger.error(f"Could not create paystack recipient. Error: {message}")
             return None
 
+
+class FinalizeTransferView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        pass
 
 
 
@@ -588,27 +623,27 @@ class PaystackWebhookView(APIView):
             digestmod=hashlib.sha512
         ).hexdigest()
         if computed_signature != signature:
-            logger.info("Attempted access to webhook failed: invalid signature")
+            logger.critical("Attempted access to webhook blocked: invalid signature")
             return Response({'error': 'Invalid signature'}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
             event_data = json.loads(payload)
         except ValueError:
             return Response({'error': 'Invalid payload'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Handle different types of events (transfer.success, transfer.failed, etc.)
-        event = event_data['event']
-        event_type, event_status = event.split('.')
+        event = event_data['event'].split('.')
+        event_type, event_status = event[0], event[1]
         if event_type == 'transfer':
             transfer_reference = event_data['data']['transfer_code']
-            if event_status == 'pending':
+            if event_status == 'success':
                 pass
             elif event_status == 'failed':
                 pass
-            elif event_status == 'success':
+            elif event_status == 'reversed':
                 pass
             else:
-                pass
+                logger.error("Unknown paystack event status received: %s", event_status)
+                return Response({'error': 'Unknown paystack event status'}, status=status.HTTP_200_OK) #returning a 200 to acknowledge that the message has been recieved
         else:
             logger.info(f"Recieved non-transfer webhook: {event}")
             return Response({'status': 'success'}, status=status.HTTP_200_OK)

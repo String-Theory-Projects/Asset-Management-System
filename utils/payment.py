@@ -4,6 +4,11 @@ from rest_framework import status
 import random
 import string
 import logging
+from decimal import Decimal
+from typing import Dict, Union, Tuple
+from django.conf import settings
+from requests.exceptions import RequestException
+from http import HTTPStatus
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -82,24 +87,14 @@ def verify_paystack_payment(transaction_ref):
         return None, "Invalid response from Flutterwave"
 
 
-import requests
-import logging
-from decimal import Decimal
-from typing import Dict, Union, Tuple
-from django.conf import settings
-from requests.exceptions import RequestException
-from http import HTTPStatus
-
-# Set up logger
-logger = logging.getLogger(__name__)
 
 
-def initiate_paystack_transfer(amount: Decimal, recipient: str, reason: str = None) -> Tuple[bool, Dict, str]:
+def initiate_paystack_transfer(amount, recipient, reason = None):
     """
     Initiates a transfer using the Paystack API with comprehensive error handling and logging.
 
     Args:
-        amount (Decimal): Amount to transfer in smallest currency unit (kobo for NGN)
+        amount (float): Amount to transfer in smallest currency unit (kobo for NGN)
         recipient (str): Paystack recipient code
         reason (str, optional): Reason for the transfer
 
@@ -131,7 +126,7 @@ def initiate_paystack_transfer(amount: Decimal, recipient: str, reason: str = No
 
     data = {
         "source": "balance",
-        "amount": int(amount * 100),  # Convert to kobo
+        "amount": float(amount * 100),  # Convert to kobo
         "recipient": recipient.strip(),
         "reason": reason.strip() if reason else None
     }
@@ -217,7 +212,7 @@ def create_paystack_recipient(user, name, account_number, bank_code, currency='N
     description (str, optional): A description for this recipient
 
     Returns:
-    tuple: (success (bool), message (str), recipient (PaystackTransferRecipient or None))
+    tuple: (success (bool), recipient_data (json), message (str)
     """
     url = "https://api.paystack.co/transferrecipient"
     headers = {
@@ -235,7 +230,7 @@ def create_paystack_recipient(user, name, account_number, bank_code, currency='N
         data["description"] = description
 
     # Log the initiation of recipient creation
-    logger.info(f"Creating Paystack recipient for user {user} with account {account_number}")
+    logger.info(f"Creating Paystack recipient for user {user.username} with account {account_number}")
 
     try:
         response = requests.post(url, json=data, headers=headers)
