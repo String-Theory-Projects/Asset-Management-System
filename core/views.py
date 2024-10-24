@@ -627,12 +627,19 @@ class PaystackTransferConfirmationView(APIView):
         }
         """
         logger.info(request.data)
-        trxref = request.data.get('reference')
-        amount = request.data.get('amount')
-
-        if not trxref or not amount:
-            error_msg = "No transaction reference provided" if not trxref else "No amount provided"
-            logger.critical(f"Transfer confirmation failed: {error_msg}. Transaction may not have come from paystack")
+        try:
+            trxref = request.data['body'].get('reference')
+            amount = request.data['body'].get('amount')
+            if not trxref or not amount:
+                error_msg = "No transaction reference provided" if not trxref else "No amount provided"
+                logger.critical(f"Transfer confirmation failed: {error_msg}. Transaction may not have come from paystack")
+                return Response(
+                    {"error": error_msg},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except ValueError:
+            error_msg = "Invalid response package format"
+            logger.error(error_msg)
             return Response(
                 {"error": error_msg},
                 status=status.HTTP_400_BAD_REQUEST
