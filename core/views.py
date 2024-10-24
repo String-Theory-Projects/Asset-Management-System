@@ -626,7 +626,7 @@ class PaystackTransferConfirmationView(APIView):
             "trxref": "transaction_reference"
         }
         """
-
+        logger.info(request.data)
         trxref = request.data.get('reference')
         amount = request.data.get('amount')
 
