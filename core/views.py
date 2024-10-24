@@ -215,7 +215,7 @@ class InitiatePaymentView(APIView):
             is_outgoing = validate_field(request.data, "is_outgoing", [bool], required=False, default=False)
 
             # check if the asset and subasset exist
-            asset = Asset.objects.filter(asset_number=asset_number).first()
+            asset = Asset.objects.filter(asset_number=asset_number).exists()
             if not asset:
                 raise ValueError("Asset not found.")
 
@@ -223,16 +223,16 @@ class InitiatePaymentView(APIView):
             if sub_asset_type:
                 sub_asset = None
                 if sub_asset_type == "vehicle":
-                    sub_asset = Vehicle.objects.filter(vehicle_number=sub_asset_number).first()
+                    sub_asset = Vehicle.objects.filter(vehicle_number=sub_asset_number).exists()
                 elif sub_asset_type == "hotel_room":
-                    sub_asset = HotelRoom.objects.filter(room_number=sub_asset_number).first()
+                    sub_asset = HotelRoom.objects.filter(room_number=sub_asset_number).exists()
                 
                 if not sub_asset:
                     raise ValueError(f"{sub_asset_type.capitalize()} sub-asset not found.")
             else:
                 # Check all sub-assets for the given asset number
-                vehicle_sub_assets = Vehicle.objects.filter(vehicle_number=sub_asset_number).first()
-                hotel_room_sub_assets = HotelRoom.objects.filter(room_number=sub_asset_number).first()
+                vehicle_sub_assets = Vehicle.objects.filter(vehicle_number=sub_asset_number).exists()
+                hotel_room_sub_assets = HotelRoom.objects.filter(room_number=sub_asset_number).exists()
 
                 if not vehicle_sub_assets and not hotel_room_sub_assets:
                     raise ValueError("No sub-assets found for the given sub-asset number.")
@@ -508,15 +508,23 @@ class InitiateTransferView(APIView):
 
         recipient_code =  self.get_paystack_recipient(bank_code, bank_account_number)
         if recipient_code is None:
-            logger.info(f"Paystack recipient does not exist. Creating recipient with bank number {bank_account_number} for bank code {bank_code}")
-            success, message, response_data = create_paystack_recipient(User, bank_account_name, bank_account_number, bank_code)
-            if not success:
-                logger.error(f"Unable to create paystack recipient: {message}")
-                return Response({"error": "Unable to create paystack recipient."}, status=status.HTTP_400_BAD_REQUEST)
+            paystack_recipient_data = {
+                "bank_account_name": bank_account_name,
+                "account_number": bank_account_number,
+                "bank_code": bank_code,
+                "description": f"Paystack recipient for {User.username}",
+            }
 
+            logger.info(
+                f"Paystack recipient does not exist. Creating recipient with bank number {bank_account_number} for bank code {bank_code}")
+
+            # Call the method to create a new Paystack recipient
+            response_data = self.create_new_paystack_recipient(paystack_recipient_data)
+            if response_data is None:
+                return Response({"error": "Could not create paystack recipient."}, status=status.HTTP_400_BAD_REQUEST)
             recipient_code = response_data['recipient_code']
-            bank_name = response_data['bank_name']
-            bank_account_name = response_data['account_name']
+            bank_name = response_data['details']['bank_name']
+            bank_account_name = response_data['details']['account_name']
             paystack_recipient_local = PaystackTransferRecipient(
                 user=self.request.user,
                 recipient_code=recipient_code,
@@ -562,18 +570,26 @@ class InitiateTransferView(APIView):
         Get the Paystack transfer recipient for the current user.
         Returns None if the recipient doesn't exist or doesn't belong to the current user.
         """
-        try:
-            recipient = PaystackTransferRecipient.objects.get(
-                user=self.request.user,
-                bank_account_number=bank_account_number,
-                bank_code=bank_code
-            )
-
-            return recipient.recipient_code
-        except PaystackTransferRecipient.DoesNotExist:
-            return None
+        recipient = PaystackTransferRecipient.objects.filter(
+            bank_account_number=bank_account_number,
+            bank_code=bank_code
+        )
+        return recipient.first().recipient_code if recipient.exists() else None
 
     def create_new_paystack_recipient(self, data):
+        # check if recipient with given account number and bank exists already
+        saved_paystack_recipient = PaystackTransferRecipient.objects.filter(
+            user=self.request.user,
+            bank_account_number=data['account_number'],
+            bank_code=data['bank_code']
+        )
+        if saved_paystack_recipient.exists():
+            logger.info(f"Paystack recipient already exists: {saved_paystack_recipient}")
+            return {
+                "recipient_code": saved_paystack_recipient.first().recipient_code,
+                "bank_name": saved_paystack_recipient.first().bank_name,
+                "account_name": saved_paystack_recipient.first().bank_account_name,
+            }
         status, recipient_data, message = create_paystack_recipient(
             user=self.request.user,
             name= data['bank_account_name'],
@@ -582,17 +598,7 @@ class InitiateTransferView(APIView):
             currency='NGN',
             description=data['description'],
         )
-        # check if recipient with given account number and bank exists already
-        saved_paystack_recipient = PaystackTransferRecipient.objects.filter(
-            user=self.request.user,
-            bank_account_number=data['bank_account_number'],
-            bank_code=data['bank_code']
-    )
-        if saved_paystack_recipient.exists():
-            logger.info(f"Paystack recipient already exists: {saved_paystack_recipient}")
-            return {
-                "recipient_code":saved_paystack_recipient.first().recipient_code
-            }
+
         if status:
             logger.info(f"PaystackTransferRecipient object created in the database for user {self.request.user.username}")
             return recipient_data
@@ -621,10 +627,12 @@ class PaystackTransferConfirmationView(APIView):
         }
         """
 
-        trxref = request.data.get('trxref')
-        if not trxref:
-            error_msg = "No transaction reference provided"
-            logger.error(f"Transfer confirmation failed: {error_msg}")
+        trxref = request.data.get('reference')
+        amount = request.data.get('amount')
+
+        if not trxref or not amount:
+            error_msg = "No transaction reference provided" if not trxref else "No amount provided"
+            logger.critical(f"Transfer confirmation failed: {error_msg}. Transaction may not have come from paystack")
             return Response(
                 {"error": error_msg},
                 status=status.HTTP_400_BAD_REQUEST
@@ -647,6 +655,11 @@ class PaystackTransferConfirmationView(APIView):
                 )
                 return Response(status=status.HTTP_200_OK)
 
+            if float(transaction.amount) != float(amount):
+                logger.error(
+                    f"Transfer confirmation failed: Amount {amount} status is not  "
+                    f"{transaction.amount}'"
+                )
             # Log different failure cases
             if transaction.payment_status != 'pending':
                 logger.error(

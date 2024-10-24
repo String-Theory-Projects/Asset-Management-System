@@ -89,13 +89,14 @@ def verify_paystack_payment(transaction_ref):
 
 
 
-def initiate_paystack_transfer(amount, recipient, reason = None):
+def initiate_paystack_transfer(amount, recipient, reference, reason = None):
     """
     Initiates a transfer using the Paystack API with comprehensive error handling and logging.
 
     Args:
         amount (float): Amount to transfer in smallest currency unit (kobo for NGN)
         recipient (str): Paystack recipient code
+        reference (str):Transfer reference
         reason (str, optional): Reason for the transfer
 
     Returns:
@@ -128,6 +129,7 @@ def initiate_paystack_transfer(amount, recipient, reason = None):
         "source": "balance",
         "amount": float(amount * 100),  # Convert to kobo
         "recipient": recipient.strip(),
+        "reference": reference,
         "reason": reason.strip() if reason else None
     }
 
@@ -222,6 +224,7 @@ def create_paystack_recipient(user, name, account_number, bank_code, currency='N
     data = {
         "type": "nuban",
         "name": name,
+        ""
         "account_number": account_number,
         "bank_code": bank_code,
         "currency": currency
