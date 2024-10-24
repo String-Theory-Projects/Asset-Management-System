@@ -626,7 +626,6 @@ class PaystackTransferConfirmationView(APIView):
             "trxref": "transaction_reference"
         }
         """
-        logger.info(request.data)
         try:
             trxref = request.data['data']['details']['body'].get('reference')
             amount = request.data['data']['details']['body'].get('amount')
@@ -731,14 +730,14 @@ class PaystackWebhookView(APIView):
         if event_type == 'transfer':
             transfer_reference = event_data['data']['transfer_code']
             if event_status == 'success':
-                pass
+                logger.info("Paystack transfer successful: %s", transfer_reference)
             elif event_status == 'failed':
-                pass
+                logger.error("Paystack transfer failed: %s", transfer_reference)
             elif event_status == 'reversed':
-                pass
+                logger.warning("Paystack transfer reversed: %s", transfer_reference)
             else:
                 logger.error("Unknown paystack event status received: %s", event_status)
-                return Response({'error': 'Unknown paystack event status'}, status=status.HTTP_200_OK) #returning a 200 to acknowledge that the message has been recieved
+                return Response({'error': 'Unknown paystack event status'}, status=status.HTTP_200_OK)
         else:
             logger.info(f"Recieved non-transfer webhook: {event}")
             return Response({'status': 'success'}, status=status.HTTP_200_OK)
