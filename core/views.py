@@ -628,8 +628,8 @@ class PaystackTransferConfirmationView(APIView):
         """
         logger.info(request.data)
         try:
-            trxref = request.data['data']['body'].get('reference')
-            amount = request.data['data']['body'].get('amount')
+            trxref = request.data['data']['details']['body'].get('reference')
+            amount = request.data['data']['details']['body'].get('amount')
             if not trxref or not amount:
                 error_msg = "No transaction reference provided" if not trxref else "No amount provided"
                 logger.critical(f"Transfer confirmation failed: {error_msg}. Transaction may not have come from paystack")
