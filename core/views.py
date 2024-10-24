@@ -702,7 +702,7 @@ class PaystackWebhookView(APIView):
     """
     Webhook to handle events from Paystack such as transfer.success and transfer.failed.
     """
-
+    permission_classes = [AllowAny]
     def post(self, request, *args, **kwargs):
         # Paystack sends the webhook data as a JSON payload
         payload = request.body
