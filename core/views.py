@@ -656,7 +656,7 @@ class PaystackTransferConfirmationView(APIView):
                 seconds=transfer_policy_config['pending_transfer_expiry']
             )
 
-            if int(transaction.amount) != int(amount):
+            if int(transaction.amount)*100 != int(amount):
                 logger.error(
                     f"Transfer confirmation failed: Amount {amount} is not  "
                     f"{transaction.amount}'"
