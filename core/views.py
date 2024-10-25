@@ -502,9 +502,13 @@ class InitiateTransferView(APIView):
             return Response({"error": "Amount,  bank_account_number, bank_code, bank_account_name"},
                             status=status.HTTP_400_BAD_REQUEST)
         if float(transfer_policy_config['min_amount']) > float(amount) or float(amount) > float(transfer_policy_config['max_amount']):
+            min_amount = f"{transfer_policy_config['min_amount']:,.2f}"
+            max_amount = f"{transfer_policy_config['max_amount']:,.2f}"
+
             logger.error(
-                f"Invalid transfer amount: {amount}. Must be between {transfer_policy_config['min_amount']} and {transfer_policy_config['max_amount']}.")
-            return Response({"error": f"Amount must be between {transfer_policy_config['min_amount']} and {transfer_policy_config['max_amount']}"},status.HTTP_400_BAD_REQUEST)
+                f"Invalid transfer amount: {amount}. Must be between ₦{min_amount} and ₦{max_amount}.")
+            return Response({"error": f"Amount must be between ₦{min_amount} and ₦{max_amount}"},
+                            status.HTTP_400_BAD_REQUEST)
 
         recipient_code =  self.get_paystack_recipient(bank_code, bank_account_number)
         if recipient_code is None:
@@ -606,7 +610,6 @@ class InitiateTransferView(APIView):
             logger.error(f"Could not create paystack recipient. Error: {message}")
             return None
 
-
 class FinalizeTransferView(APIView):
     permission_classes = [AllowAny]
 
@@ -653,6 +656,12 @@ class PaystackTransferConfirmationView(APIView):
                 seconds=transfer_policy_config['pending_transfer_expiry']
             )
 
+            if int(transaction.amount) != int(amount):
+                logger.error(
+                    f"Transfer confirmation failed: Amount {amount} is not  "
+                    f"{transaction.amount}'"
+                )
+                return Response(status=status.HTTP_400_BAD_REQUEST)
             # Check if transaction is pending and within time window
             if (transaction.payment_status == 'pending' and
                     transaction.timestamp >= expiry_time):
@@ -661,11 +670,6 @@ class PaystackTransferConfirmationView(APIView):
                 )
                 return Response(status=status.HTTP_200_OK)
 
-            if float(transaction.amount) * 100 != float(amount):
-                logger.error(
-                    f"Transfer confirmation failed: Amount {amount} status is not  "
-                    f"{transaction.amount}'"
-                )
             # Log different failure cases
             if transaction.payment_status != 'pending':
                 logger.error(
@@ -701,47 +705,178 @@ class PaystackTransferConfirmationView(APIView):
 class PaystackWebhookView(APIView):
     """
     Webhook to handle events from Paystack such as transfer.success and transfer.failed.
+    Implements comprehensive handling of transfer events with proper error handling,
+    idempotency checks, and transaction management.
     """
     permission_classes = [AllowAny]
+
     def post(self, request, *args, **kwargs):
-        # Paystack sends the webhook data as a JSON payload
-        payload = request.body
-        signature = request.headers.get('x-paystack-signature')
+        # Verify webhook signature
+        if not self._verify_signature(request):
+            return Response(
+                {'error': 'Invalid signature'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
-        # Verify the signature to ensure it’s from Paystack
-        secret_key = settings.SECRET_KEY
-
-        computed_signature = hmac.new(
-            bytes(secret_key, 'utf-8'),
-            msg=payload,
-            digestmod=hashlib.sha512
-        ).hexdigest()
-        if computed_signature != signature:
-            logger.critical("Attempted access to webhook blocked: invalid signature")
-            return Response({'error': 'Invalid signature'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            event_data = json.loads(payload)
-        except ValueError:
-            return Response({'error': 'Invalid payload'}, status=status.HTTP_400_BAD_REQUEST)
+            event_data = json.loads(request.body)
+            event = event_data.get('event', '').split('.')
 
-        # Handle different types of events (transfer.success, transfer.failed, etc.)
-        event = event_data['event'].split('.')
-        event_type, event_status = event[0], event[1]
-        if event_type == 'transfer':
-            transfer_reference = event_data['data']['transfer_code']
-            if event_status == 'success':
-                logger.info("Paystack transfer successful: %s", transfer_reference)
-            elif event_status == 'failed':
-                logger.error("Paystack transfer failed: %s", transfer_reference)
-            elif event_status == 'reversed':
-                logger.warning("Paystack transfer reversed: %s", transfer_reference)
-            else:
-                logger.error("Unknown paystack event status received: %s", event_status)
-                return Response({'error': 'Unknown paystack event status'}, status=status.HTTP_200_OK)
-        else:
-            logger.info(f"Recieved non-transfer webhook: {event}")
+            if len(event) != 2:
+                logger.error(f"Invalid event format received: {event_data.get('event')}")
+                return Response(
+                    {'error': 'Invalid event format'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            event_type, event_status = event[0], event[1]
+
+            # Handle transfer events
+            if event_type == 'transfer':
+                return self._handle_transfer_event(event_status, event_data)
+
+            # Log non-transfer events
+            logger.info(f"Received non-transfer webhook: {event}")
             return Response({'status': 'success'}, status=status.HTTP_200_OK)
+
+        except json.JSONDecodeError:
+            logger.error("Failed to decode webhook payload", exc_info=True)
+            return Response(
+                {'error': 'Invalid payload'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error processing webhook: {str(e)}", exc_info=True)
+            return Response(
+                {'error': 'Internal server error'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _verify_signature(self, request):
+        """
+        Verify that the webhook request came from Paystack.
+        """
+        paystack_signature = request.headers.get('x-paystack-signature')
+        if not paystack_signature:
+            logger.warning("Missing Paystack signature in webhook request")
+            return False
+
+        # Use a dedicated webhook secret instead of the general SECRET_KEY
+        secret_key = settings.PAYSTACK_SECRET_KEY
+
+        computed_signature = hmac_sha512(secret_key, request.body)
+        return computed_signature == paystack_signature
+
+    def _handle_transfer_event(self, event_status, event_data):
+        """
+        Handle different transfer event types with proper transaction management.
+        """
+        try:
+            transfer_data = event_data.get('data', {})
+            transfer_reference = transfer_data.get('reference')
+            amount = transfer_data.get('amount')
+
+            if not transfer_reference:
+                logger.error("Missing required transfer data in webhook payload")
+                return Response(
+                    {'error': 'Missing required transfer data'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Handle the event within a transaction
+            with transaction.atomic():
+                # Select the transaction for update to prevent race conditions
+                try:
+                    txn = Transaction.objects.select_for_update().get(
+                        transaction_ref=transfer_reference
+                    )
+                except Transaction.DoesNotExist:
+                    logger.error(f"Transaction not found for reference: {transfer_reference}")
+                    return Response(
+                        {'error': 'Transaction not found'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+                # Handle different event statuses
+                if event_status == 'success':
+                    return self._handle_transfer_success(txn, transfer_data)
+                elif event_status == 'failed':
+                    return self._handle_transfer_failure(txn, transfer_data)
+                elif event_status == 'reversed':
+                    return self._handle_transfer_reversal(txn, transfer_data)
+                else:
+                    logger.warning(f"Unknown transfer status received: {event_status}")
+                    return Response(
+                        {'status': 'ignored'},
+                        status=status.HTTP_200_OK
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"Error processing transfer event: {str(e)}",
+                exc_info=True
+            )
+            return Response(
+                {'error': 'Internal server error'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _handle_transfer_success(self, transaction, transfer_data):
+        """
+        Handle successful transfer events.
+        """
+        if transaction.payment_status == 'success':
+            logger.info(f"Transfer already marked as successful: {transaction.transaction_ref}")
+            return Response({'status': 'success'}, status=status.HTTP_200_OK)
+
+        transaction.payment_status = 'success'
+        transaction.completed_at = datetime.now()
+        transaction.save()
+
+        logger.info(f"Successfully processed transfer: {transaction.transaction_ref}")
+        return Response({'status': 'success'}, status=status.HTTP_200_OK)
+
+    def _handle_transfer_failure(self, transaction, transfer_data):
+        """
+        Handle failed transfer events.
+        """
+        transaction.payment_status = 'failed'
+        transaction.failure_reason = transfer_data.get('reason', 'Unknown failure reason')
+        transaction.metadata = {
+            **transaction.metadata,
+            'paystack_transfer_data': transfer_data
+        }
+        transaction.save()
+
+        logger.error(
+            f"Transfer failed for transaction {transaction.transaction_ref}: "
+            f"{transaction.failure_reason}"
+        )
+        return Response({'status': 'success'}, status=status.HTTP_200_OK)
+
+    def _handle_transfer_reversal(self, transaction, transfer_data):
+        """
+        Handle transfer reversal events.
+        """
+        transaction.payment_status = 'reversed'
+        transaction.metadata = {
+            **transaction.metadata,
+            'paystack_transfer_data': transfer_data,
+            'reversal_reason': transfer_data.get('reason', 'Unknown reversal reason')
+        }
+        transaction.save()
+
+        logger.warning(
+            f"Transfer reversed for transaction {transaction.transaction_ref}: "
+            f"{transaction.metadata.get('reversal_reason')}"
+        )
         return Response({'status': 'success'}, status=status.HTTP_200_OK)
 
     def get(self, request, *args, **kwargs):
-        return Response({'error': 'GET method not allowed'}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+        """
+        Handle GET requests to the webhook endpoint.
+        """
+        return Response(
+            {'error': 'Method not allowed'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED
+        )

@@ -3,7 +3,8 @@ from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
-
+import hmac
+import hashlib
 
 
 from celery import shared_task
@@ -68,3 +69,9 @@ class CustomPageNumberPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
+
+# ----------- SHA512 signature helpers -------------
+def hmac_sha512(key:str, message:bytes) -> str:
+    key = key.encode('utf-8')
+    hashed_payload = hmac.new(key, message, digestmod=hashlib.sha512).hexdigest()
+    return hashed_payload

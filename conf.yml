@@ -9,6 +9,7 @@ core:
     - ['completed', 'Completed']
     - ['failed', 'Failed']
     - ['canceled', 'Canceled']
+    - ['reversed', 'Reversed']
 
   asset_type_choices:
     - ['vehicle', 'Vehicle']

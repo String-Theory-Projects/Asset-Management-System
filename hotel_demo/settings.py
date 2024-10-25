@@ -25,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # system domain
-DOMAIN = os.getenv('SYSTEM_USER_REQUEST_DOMAIN', 'http://localhost:8000')
+DOMAIN = os.getenv('SYSTEM_USER_REQUEST_DOMAIN', 'localhost:8000')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
