@@ -16,6 +16,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.views.generic.base import RedirectView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -25,4 +26,6 @@ urlpatterns = [
     path('api/', include('rooms.urls')),
     path('api/', include('vehicles.urls')),
     path('api/', include('analytics.urls')),
+    path('', RedirectView.as_view(url='https://www.trykeyprotocol.com/login', permanent=True)),  # Permanent redirect (301)
+
 ]

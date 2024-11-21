@@ -1,31 +1,49 @@
-import paho.mqtt.client as mqtt
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from core.models import Asset, AssetEvent, HotelRoom, Vehicle, Role
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.permissions import IsAuthenticated, AllowAny
+
 from django.utils import timezone
-from datetime import timedelta
+from django.db.models import Sum
 from django.contrib.contenttypes.models import ContentType
-from rest_framework.permissions import IsAuthenticated
+
+from core.models import Asset, AssetEvent, HotelRoom, Vehicle
+from core.permissions import IsAdmin, IsManager
+from hotel_demo.tasks import send_control_request, schedule_sub_asset_expiry
+
+import logging
+from datetime import timedelta
+import paho.mqtt.client as mqtt
+
+# import settings
+from django.conf import settings
 
 
 # Configure the MQTT client
 MQTT_BROKER = 'broker.emqx.io'  # Replace with your MQTT broker address
 MQTT_PORT = 1883  # Default MQTT port
 
+
+logger = logging.getLogger(__name__)
+
+
 class ControlAssetView(APIView):
+    authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.mqtt_client = mqtt.Client()
         self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT)
 
     def post(self, request, *args, **kwargs):
         asset_number = kwargs.get('asset_number')
-        sub_asset_id = kwargs.get('sub_asset_id')  # Retrieve sub_asset_id from URL
+        sub_asset_id = kwargs.get('sub_asset_id')
         action_type = request.data.get('action_type')
         data = request.data.get('data')
+        update_status = request.data.get('update_status', False) # fail-safe flag to update sub_asset status by system user in case of celery task failure
 
         if not asset_number or not sub_asset_id or not action_type:
             return Response({'error': 'Asset number, sub-asset ID, and action type are required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -35,8 +53,8 @@ class ControlAssetView(APIView):
         except Asset.DoesNotExist:
             return Response({'error': 'Asset not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Ensure the user is an admin for the specified asset
-        if not request.user.roles.filter(asset=asset, role='admin').exists():
+        # Ensure the user is an admin for the specified asset or system user
+        if not (request.user.is_superuser or request.user.username == 'info@trykey.com' or request.user.roles.filter(asset=asset, role='admin').exists()):
             return Response({'error': 'You do not have permission to control this asset.'}, status=status.HTTP_403_FORBIDDEN)
 
         topic = None
@@ -46,6 +64,8 @@ class ControlAssetView(APIView):
             # Validate the sub-asset (room)
             try:
                 room = HotelRoom.objects.get(room_number=sub_asset_id, hotel=asset)
+                if room.status and request.user.username != 'info@trykey.com':
+                    return Response({'error': 'Cannot control an active hotel room. Please check out the guest first.'}, status=status.HTTP_400_BAD_REQUEST)
             except HotelRoom.DoesNotExist:
                 return Response({'error': 'Room not found for the specified hotel.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -60,6 +80,8 @@ class ControlAssetView(APIView):
             # Validate the sub-asset (vehicle)
             try:
                 vehicle = Vehicle.objects.get(vehicle_number=sub_asset_id, fleet=asset)
+                if vehicle.status:
+                    return Response({'error': 'Cannot control an active vehicle. Please ensure the vehicle is parked and not in use.'}, status=status.HTTP_400_BAD_REQUEST)
             except Vehicle.DoesNotExist:
                 return Response({'error': 'Vehicle not found for the specified fleet.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -73,7 +95,7 @@ class ControlAssetView(APIView):
 
         # Publish the MQTT command
         try:
-            self.mqtt_client.publish(topic, data)  # Assuming `data` contains the command to send
+            self.mqtt_client.publish(topic, data, retain=True)  # Assuming `data` contains the command to send
             # Log the action with sub-asset
             AssetEvent.objects.create(
                 asset=asset,
@@ -83,6 +105,14 @@ class ControlAssetView(APIView):
                 content_type=ContentType.objects.get_for_model(room if asset.asset_type == 'hotel' else vehicle),
                 object_id=sub_asset_id
             )
+
+            # Update room status if the flag is set
+            if update_status and asset.asset_type == 'hotel':
+                room = HotelRoom.objects.get(room_number=sub_asset_id, hotel=asset)
+                room.status = False
+                room.save()
+                logger.info(f"Room status updated to False for room {sub_asset_id}")
+
             return Response({'message': f'{action_type.capitalize()} control command sent.'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': f'Failed to send command: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -227,12 +257,20 @@ class CheckAssetStatusView(APIView):
             status=True
         ).count()
 
-        total_occupied_rooms = AssetEvent.objects.filter(
+        occupied_rooms = AssetEvent.objects.filter(
             asset=asset,
             event_type='occupancy',
             timestamp__date=current_date,
-            data='occupied'
-        ).values('object_id').distinct().count()
+            data='1'
+        ).values('object_id').distinct()
+
+        total_occupied_rooms = occupied_rooms.count()
+
+        # Calculate expected yield
+        expected_yield = HotelRoom.objects.filter(
+            hotel=asset,
+            room_number__in=occupied_rooms.values_list('object_id', flat=True)
+        ).aggregate(total_price=Sum('price'))['total_price'] or 0
 
         # Get daily stats
         daily_stats = []
@@ -244,18 +282,26 @@ class CheckAssetStatusView(APIView):
                 event_type='occupancy',
                 timestamp__lt=next_date,
                 timestamp__gte=current_date,
-                data='occupied'
-            ).values('object_id').distinct().count()
+                data='1'
+            ).values('object_id').distinct()
+
+            daily_occupied_count = occupied_rooms.count()
 
             active_rooms = HotelRoom.objects.filter(
                 hotel=asset,
                 status=True
             ).count()
 
+            daily_expected_yield = HotelRoom.objects.filter(
+                hotel=asset,
+                room_number__in=occupied_rooms.values_list('object_id', flat=True)
+            ).aggregate(total_price=Sum('price'))['total_price'] or 0
+
             daily_stats.append({
                 'date': current_date.date(),
-                'occupied_rooms': occupied_rooms,
-                'active_rooms': active_rooms
+                'occupied_rooms': daily_occupied_count,
+                'active_rooms': active_rooms,
+                'expected_yield': daily_expected_yield
             })
             current_date = next_date
 
@@ -263,6 +309,7 @@ class CheckAssetStatusView(APIView):
             'total_rooms': total_rooms,
             'total_active_rooms': total_active_rooms,
             'total_occupied_rooms': total_occupied_rooms,
+            'expected_yield': expected_yield,
             'daily_stats': daily_stats
         })
 
@@ -313,3 +360,54 @@ class CheckAssetStatusView(APIView):
             'total_in_use_vehicles': total_in_use_vehicles,
             'daily_stats': daily_stats
         })
+
+
+class DirectControlView(APIView):
+    permission_classes = [IsAuthenticated & (IsAdmin | IsManager)]
+
+    def post(self, request, *args, **kwargs):
+        asset_number = kwargs.get('asset_number')
+        sub_asset_id = kwargs.get('sub_asset_id')
+        action_type = request.data.get('action_type')
+        data = request.data.get('data')
+
+        if not all([asset_number, sub_asset_id, action_type, data]):
+            return Response({
+                'error': 'Missing required parameters'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            asset = Asset.objects.get(asset_number=asset_number)
+        except Asset.DoesNotExist:
+            return Response({
+                'error': 'Asset not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Call send_control_request asynchronously
+        send_control_request.delay(asset_number, sub_asset_id, action_type, data)
+
+        # Schedule sub_asset_expiry
+        current_time = timezone.now()
+        if settings.DEBUG:
+            expiry_time = current_time + timedelta(minutes=int(settings.DIRECT_CONTROL_EXPIRY))
+        else:    
+            expiry_time = current_time + timedelta(hours=int(settings.DIRECT_CONTROL_EXPIRY))
+
+        expiry_data = None
+        # Set expiry for hotel
+        # if asset.asset_type == 'hotel':
+        #     expiry_data = 'lock' if data == 'unlock' else 'unlock'
+        #     schedule_sub_asset_expiry.apply_async(
+        #         args=[asset_number, sub_asset_id, "access", expiry_data, False],
+        #         eta=expiry_time
+        #     )
+
+        return Response({
+            'message': 'Control request sent and expiry scheduled',
+            'asset_number': asset_number,
+            'sub_asset_id': sub_asset_id,
+            'action_type': action_type,
+            'expiry_time': expiry_time,
+            'expiry_action_type': "access" if asset.asset_type == 'hotel' else None,
+            'expiry_data': expiry_data
+        }, status=status.HTTP_202_ACCEPTED)

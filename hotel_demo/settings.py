@@ -12,6 +12,11 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 import os
+import sys
+from datetime import timedelta
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 SYSTEM_USER_REQUEST_DOMAIN = 'https://dashboard.trykeyprotocol.com'
@@ -20,9 +25,11 @@ SYSTEM_USER_REQUEST_DOMAIN = 'https://dashboard.trykeyprotocol.com'
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
+
+# system domain
+DOMAIN = os.getenv('SYSTEM_USER_REQUEST_DOMAIN', 'localhost:8000')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY')
@@ -30,25 +37,25 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
 
-# Celery Configuration Options
-CELERY_TIMEZONE = "Africa/Lagos"
-CELERY_ENABLE_UTC = True
-CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = 30 * 60
-CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = CELERY_BROKER_URL
-CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# Duration for directly controlling sub asset (seconds if DEBUG else hours)
+DIRECT_CONTROL_EXPIRY = os.getenv('DIRECT_CONTROL_EXPIRY', 2)
 
 # Flutterwave keys
 FLW_PUBLIC_KEY = os.getenv('FLW_PUBLIC_KEY')
 FLW_SECRET_KEY = os.getenv('FLW_SECRET_KEY')
 FLW_SECRET_HASH = os.getenv('FLW_SECRET_HASH', '')
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'dashboard.trykeyprotocol.com']
+# Paystack keys
+PAYSTACK_SECRET_KEY_DEV = os.getenv('PAYSTACK_SECRET_KEY_DEV')
+PAYSTACK_SECRET_KEY_LIVE = os.getenv('PAYSTACK_SECRET_KEY_LIVE')
+
+PAYSTACK_SECRET_KEY = PAYSTACK_SECRET_KEY_DEV if DEBUG else PAYSTACK_SECRET_KEY_LIVE
+
+ALLOWED_HOSTS = [i for i in {DOMAIN, 'dashboard.trykeyprotocol.com', 'localhost'}]
 
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:8000',
-    'http://127.0.0.1:8000',
+    f"http://{DOMAIN}",
+    f"https://{DOMAIN}",
     'chrome-extension://amknoiejhlmhancpahfcfcfhllgkpbld'
 ]
 
@@ -57,9 +64,9 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 # for referencing APIs from frontend
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "https://dashboard.trykeyprotocol.com",
-    "https://company-website-mnmk-c7ma2a3cm-trykey-protocols-projects.vercel.app/"
+    f"http://{DOMAIN}",
+    f"https://{DOMAIN}",
+    "https://trykeyprotocol.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -70,8 +77,8 @@ INSTALLED_APPS = [
     'core',
     'assets',
     'mqtt_handler',
-    'django_celery_beat',
     'django_celery_results',
+    'django_celery_beat',
     'corsheaders',
     'whitenoise.runserver_nostatic',
     'django.contrib.admin',
@@ -84,6 +91,12 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
 ]
 
+is_testing = 'test' in sys.argv or 'pytest' in sys.modules
+
+# Remove 'mqtt_handler' if in testing mode
+if is_testing:
+    INSTALLED_APPS = [app for app in INSTALLED_APPS if app != 'mqtt_handler']
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.TokenAuthentication',
@@ -94,9 +107,7 @@ REST_FRAMEWORK = {
     ]
 }
 
-# Optional: JWT configuration
-from datetime import timedelta
-
+# JWT configuration
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=365),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=365),
@@ -142,22 +153,31 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'hotel_demo.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 DATABASES = {
     'default': {
-        # 'ENGINE': 'django.db.backends.sqlite3',
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('DB_NAME'),
-        # 'NAME': BASE_DIR / 'db.sqlite3',
         'USER': os.environ.get('DB_USER'),
         'PASSWORD': os.environ.get('DB_PASSWORD'),
         'HOST': os.environ.get('DB_HOST'),
         'PORT': os.environ.get('DB_PORT')
     }
 }
+
+# Celery Configuration Options
+CELERY_TIMEZONE = "Africa/Lagos"
+CELERY_ENABLE_UTC = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_ACCEPT_CONTENT = ['application/json']
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TASK_SERIALIZER = 'json'
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -177,18 +197,16 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = CELERY_TIMEZONE
+TIME_ZONE = 'Africa/Lagos'
 
 USE_I18N = True
 
 USE_TZ = True
-
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
@@ -219,21 +237,16 @@ SILENCED_SYSTEM_CHECKS = ['staticfiles.W004']
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# LOGGING = {
-#     'version': 1,
-#     'disable_existing_loggers': False,
-#     'handlers': {
-#         'file': {
-#             'level': 'DEBUG',
-#             'class': 'logging.FileHandler',
-#             'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
-#         },
-#     },
-#     'loggers': {
-#         'django': {
-#             'handlers': ['file'],
-#             'level': 'DEBUG',
-#             'propagate': True,
-#         },
-#     },
-# }
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+}

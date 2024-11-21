@@ -3,9 +3,14 @@ from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
+<<<<<<< HEAD
 from django.core.mail import send_mail
 from hotel_demo import settings
 
+=======
+import hmac
+import hashlib
+>>>>>>> b7d3be270b53034969224b5f26c4f9a691be5c0e
 
 
 from celery import shared_task
@@ -13,6 +18,15 @@ import sendgrid
 from sendgrid.helpers.mail import *
 
 from rest_framework.pagination import PageNumberPagination
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model
+User = get_user_model()
+
+
+def get_system_user_token():
+    system_user = User.objects.get(username='info@trykey.com')
+    refresh = RefreshToken.for_user(system_user)
+    return str(refresh.access_token)
 
 
 # ----------- Data helpers -------------
@@ -54,6 +68,7 @@ def validate_field(data, field_name: str, expected_types, required: bool = True,
     
     return value
 
+<<<<<<< HEAD
 # ----------- Email & sms helpers -------------
 @shared_task
 def send_user_email(user_email, subject, message):
@@ -80,6 +95,8 @@ def send_user_sms(**kwargs):
     """
     
     pass
+=======
+>>>>>>> b7d3be270b53034969224b5f26c4f9a691be5c0e
 
 # ----------- API helpers -------------
 
@@ -87,3 +104,9 @@ class CustomPageNumberPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
+
+# ----------- SHA512 signature helpers -------------
+def hmac_sha512(key:str, message:bytes) -> str:
+    key = key.encode('utf-8')
+    hashed_payload = hmac.new(key, message, digestmod=hashlib.sha512).hexdigest()
+    return hashed_payload
