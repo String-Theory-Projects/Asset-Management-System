@@ -3,14 +3,11 @@ from django.core.cache import cache
 from django.core.serializers.json import DjangoJSONEncoder
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
-<<<<<<< HEAD
 from django.core.mail import send_mail
 from hotel_demo import settings
 
-=======
 import hmac
 import hashlib
->>>>>>> b7d3be270b53034969224b5f26c4f9a691be5c0e
 
 
 from celery import shared_task
@@ -68,7 +65,6 @@ def validate_field(data, field_name: str, expected_types, required: bool = True,
     
     return value
 
-<<<<<<< HEAD
 # ----------- Email & sms helpers -------------
 @shared_task
 def send_user_email(user_email, subject, message):
@@ -95,8 +91,6 @@ def send_user_sms(**kwargs):
     """
     
     pass
-=======
->>>>>>> b7d3be270b53034969224b5f26c4f9a691be5c0e
 
 # ----------- API helpers -------------
 
