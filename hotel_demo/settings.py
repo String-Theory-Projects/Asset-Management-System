@@ -53,7 +53,6 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 AUTH_USER_MODEL = 'core.User'
-
 CORS_ALLOW_ALL_ORIGINS = True
 
 # for referencing APIs from frontend
@@ -205,9 +204,11 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_HOST_USER = 'info.trykey@gmail.com'
 EMAIL_HOST_PASSWORD = 'app password(generated from company google account)'
-DEFAULT_FROM_EMAIL = 'info.trykey@gmail.com'
-EMAIL_PORT = 587
+DEFAULT_FROM_EMAIL = 'Trykey notification'
+EMAIL_PORT = 567
 EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+
 
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
