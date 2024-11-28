@@ -17,6 +17,24 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.views.generic.base import RedirectView
+from drf_yasg.views import get_schema_view
+from django.urls import re_path
+from drf_yasg import openapi
+from rest_framework.permissions import AllowAny
+
+
+schema_view = get_schema_view(
+   openapi.Info(
+      title="TryKey API",
+      default_version='v1',
+      description="Test description",
+      terms_of_service="https://www.google.com/policies/terms/",
+      contact=openapi.Contact(email="info.trykey@gmail.com"),
+      license=openapi.License(name="BSD License"),
+   ),
+   public=True,
+   permission_classes=(AllowAny,),
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -27,5 +45,6 @@ urlpatterns = [
     path('api/', include('vehicles.urls')),
     path('api/', include('analytics.urls')),
     path('', RedirectView.as_view(url='https://www.trykeyprotocol.com/login', permanent=True)),  # Permanent redirect (301)
+    path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
 
 ]

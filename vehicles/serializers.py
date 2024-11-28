@@ -6,4 +6,5 @@ class VehicleSerializer(serializers.ModelSerializer):
         model = Vehicle
         fields = ['id', 'fleet', 'brand', 'vehicle_type', 'vehicle_number', 'status']
         read_only_fields = ['id']
+        ref_name = 'VehiclesVehicleSerializer'
 

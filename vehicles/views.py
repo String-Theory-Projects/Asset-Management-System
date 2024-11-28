@@ -28,6 +28,8 @@ class VehicleRetrieveUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = VehicleSerializer
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Vehicle.objects.none()
         # Ensure the user has permission to view/update/delete the vehicle
         vehicle_id = self.kwargs['pk']
         vehicle = get_object_or_404(Vehicle, id=vehicle_id)
@@ -45,8 +47,12 @@ class VehicleStatusView(generics.RetrieveAPIView):
     # Endpoint to retrieve vehicle status
     serializer_class = VehicleSerializer
 
-    def get(self, request, *args, **kwargs):
-    
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Vehicle.objects.none()
+        return Vehicle.objects.all()
+
+    def get(self, request, *args, **kwargs):   
         vehicle_id = self.kwargs['pk']
         
         # Fetch the vehicle and ensure the user has access

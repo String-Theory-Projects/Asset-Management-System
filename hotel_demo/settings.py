@@ -74,21 +74,28 @@ CORS_ALLOW_CREDENTIALS = True
 # Application definition
 
 INSTALLED_APPS = [
-    'core',
-    'assets',
-    'mqtt_handler',
-    'django_celery_results',
-    'django_celery_beat',
-    'corsheaders',
-    'whitenoise.runserver_nostatic',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # 3rd party
     'rest_framework',
     'rest_framework_simplejwt',
+    'django_celery_results',
+    'django_celery_beat',
+    'corsheaders',
+    'whitenoise.runserver_nostatic',
+    'drf_yasg',
+    # Local
+    'core',
+    'assets',
+    'rooms',
+    'vehicles',
+    'mqtt_handler',
+    'analytics',
+
 ]
 
 is_testing = 'test' in sys.argv or 'pytest' in sys.modules
