@@ -18,6 +18,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+SYSTEM_USER_REQUEST_DOMAIN = 'https://dashboard.trykeyprotocol.com'
+# SYSTEM_USER_REQUEST_DOMAIN = 'http://localhost:8000'
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -47,7 +51,7 @@ PAYSTACK_SECRET_KEY_LIVE = os.getenv('PAYSTACK_SECRET_KEY_LIVE')
 
 PAYSTACK_SECRET_KEY = PAYSTACK_SECRET_KEY_DEV if DEBUG else PAYSTACK_SECRET_KEY_LIVE
 
-ALLOWED_HOSTS = [i for i in {DOMAIN, 'dashboard.trykeyprotocol.com', 'localhost'}]
+ALLOWED_HOSTS = [i for i in {DOMAIN, 'dashboard.trykeyprotocol.com', 'localhost', '127.0.0.1'}]
 
 CSRF_TRUSTED_ORIGINS = [
     f"http://{DOMAIN}",
@@ -56,9 +60,9 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 
 AUTH_USER_MODEL = 'core.User'
-
 CORS_ALLOW_ALL_ORIGINS = True
 
+# for referencing APIs from frontend
 CORS_ALLOWED_ORIGINS = [
     f"http://{DOMAIN}",
     f"https://{DOMAIN}",
@@ -70,21 +74,28 @@ CORS_ALLOW_CREDENTIALS = True
 # Application definition
 
 INSTALLED_APPS = [
-    'core',
-    'assets',
-    'mqtt_handler',
-    'django_celery_results',
-    'django_celery_beat',
-    'corsheaders',
-    'whitenoise.runserver_nostatic',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # 3rd party
     'rest_framework',
     'rest_framework_simplejwt',
+    'django_celery_results',
+    'django_celery_beat',
+    'corsheaders',
+    'whitenoise.runserver_nostatic',
+    'drf_yasg',
+    # Local
+    'core',
+    'assets',
+    'rooms',
+    'vehicles',
+    'mqtt_handler',
+    'analytics',
+
 ]
 
 is_testing = 'test' in sys.argv or 'pytest' in sys.modules
@@ -213,6 +224,16 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_HOST_USER = 'info.trykey@gmail.com'
+EMAIL_HOST_PASSWORD = 'app password(generated from company google account)'
+DEFAULT_FROM_EMAIL = 'Trykey notification'
+EMAIL_PORT = 567
+EMAIL_USE_TLS = True
+EMAIL_USE_SSL = False
+
 
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 

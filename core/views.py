@@ -342,7 +342,6 @@ class VerifyPaymentView(APIView):
 
         # Trigger async tasks
         # send_user_sms.delay() # NOTE: these are currently unimplemented
-        # send_user_email.delay()
 
     def update_transaction(self, transaction, status_param):
         transaction.payment_status = status_param

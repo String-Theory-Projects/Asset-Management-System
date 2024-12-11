@@ -13,3 +13,4 @@ class HotelRoomSerializer(serializers.ModelSerializer):
         model = HotelRoom
         fields = ['id', 'room_number', 'room_type', 'price', 'status']
         read_only_fields = ['id']
+        ref_name = 'RoomsHotelRoomSerializer'

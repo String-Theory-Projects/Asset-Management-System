@@ -50,6 +50,7 @@ class AssetSerializer(serializers.ModelSerializer):
         instance.save(user=user)
         return instance
 
+
 class AssetUserSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     role = serializers.SerializerMethodField()
@@ -87,6 +88,7 @@ class HotelRoomSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = HotelRoom
+        ref_name='AssetHotelRoomSerializer'
         fields = ['id', 'room_number', 'room_type', 'price', 'status', 'hotel', 'occupancy']
         read_only_fields = ['id', 'hotel']
 
@@ -108,6 +110,7 @@ class VehicleSerializer(serializers.ModelSerializer):
         model = Vehicle
         fields = ['id', 'vehicle_number', 'brand', 'vehicle_type', 'status', 'fleet']
         read_only_fields = ['id', 'fleet']
+        ref_name = 'AssetVehicleSerializer'
         extra_kwargs = {
             'vehicle_number': {'required': True}
         }

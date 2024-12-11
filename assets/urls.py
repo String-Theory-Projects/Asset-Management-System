@@ -4,8 +4,6 @@ from .views import AssetViewSet, AssociateUserView, VehicleViewSet, HotelRoomVie
 
 
 router = DefaultRouter()
-
-router = DefaultRouter()
 router.register(r'assets/(?P<asset_number>[^/.]+)/rooms', HotelRoomViewSet, basename='hotel-room')
 router.register(r'assets/(?P<asset_number>[^/.]+)/vehicles', VehicleViewSet, basename='vehicle')
 router.register('assets', AssetViewSet, basename='asset')
