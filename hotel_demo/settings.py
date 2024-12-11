@@ -51,7 +51,7 @@ PAYSTACK_SECRET_KEY_LIVE = os.getenv('PAYSTACK_SECRET_KEY_LIVE')
 
 PAYSTACK_SECRET_KEY = PAYSTACK_SECRET_KEY_DEV if DEBUG else PAYSTACK_SECRET_KEY_LIVE
 
-ALLOWED_HOSTS = [i for i in {DOMAIN, 'dashboard.trykeyprotocol.com', 'localhost'}]
+ALLOWED_HOSTS = [i for i in {DOMAIN, 'dashboard.trykeyprotocol.com', 'localhost', '127.0.0.1'}]
 
 CSRF_TRUSTED_ORIGINS = [
     f"http://{DOMAIN}",
