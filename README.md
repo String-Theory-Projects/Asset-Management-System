@@ -1,6 +1,10 @@
-## Hotel Demo — Physical Asset Lifecycle, Telemetry & Revenue Backend
+## Asset Management System — Physical Asset Lifecycle, Telemetry & Revenue Backend 🚀
 
-`hotel_demo` is a Django REST backend that models **real-world physical assets** (e.g., a hotel and its rooms, or a fleet and its vehicles) as software objects with:
+![Asset Management System dashboard preview (hotel unit control + yield + transactions)](docs/images/hotel-dashboard.png)
+
+*A practical, operations-first backend for tracking physical units, their lifecycle, their event history, and the business metrics they drive.* 📊
+
+Asset Management System is a Django REST backend that models **real-world physical assets** (e.g., a hotel and its rooms, or a fleet and its vehicles) as software objects with:
 
 - **Stable IDs** you can put on a physical label (print as a QR/barcode using any generator)
 - **A lifecycle** (inactive → active → expired) that can be **automated**
@@ -12,7 +16,7 @@ The result is a practical reference system for building digital histories for in
 
 ---
 
-## What this project is built for
+## What this project is built for 🎯
 
 Many businesses manage physical units that have to be:
 
@@ -26,7 +30,7 @@ This backend demonstrates those primitives end-to-end, using **Hotels/Rooms** an
 
 ---
 
-## Key features (solution-first)
+## Key features (solution-first) ✨
 
 - **Physical asset mapping (unit-level tracking)**  
   - `Asset` represents a top-level “container” (a hotel or a fleet) with a generated `asset_number`.
