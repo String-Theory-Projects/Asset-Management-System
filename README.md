@@ -390,3 +390,7 @@ Same pattern as hotel rooms, except the control domain is “ignition” rather 
 
 ---
 
+## License
+
+This project is shared **for showcasing and evaluation**. See `LICENSE`.
+
